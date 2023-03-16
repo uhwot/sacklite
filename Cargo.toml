@@ -1,0 +1,30 @@
+[package]
+name = "sacklite"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+actix-web = { version = "4.3", default-features = false, features = ["macros", "compress-gzip", "cookies"]}
+actix-web-lab = "0.19"
+actix-http = "3.3"
+actix-files = "0.6.2"
+
+# yes, i'm using an html template engine for xml :P
+maud = "0.24"
+
+log = "0.4"
+env_logger = "0.10"
+
+serde = { version = "1.0", features = ["derive"] }
+serde_yaml = "0.9"
+
+sha1 = "0.10"
+
+strum = "0.24"
+strum_macros = "0.24"
+
+byteorder = "1.4"
+
+anyhow = "1.0"
