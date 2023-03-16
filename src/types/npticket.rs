@@ -166,6 +166,7 @@ impl NpTicket {
         }
 
         let body = BodySection::parse(&mut rdr)?;
+        let footer = FooterSection::parse(&mut rdr)?;
     }
 }
 
@@ -214,5 +215,28 @@ impl BodySection {
         Data::empty(rdr)?;
 
         Ok(body)
+    }
+}
+
+#[derive(Debug)]
+struct FooterSection {
+    signature_id: Vec<u8>,
+    signature: Vec<u8>,
+}
+
+impl FooterSection {
+    fn parse(rdr: &mut Cursor<Bytes>) -> Result<Self> {
+        let header = SectionHeader::parse(&mut rdr)?;
+        match header.section_type {
+            SectionType::Footer => {},
+            _ => todo!("Expected footer section, got {:?}", header.section_type),
+        }
+
+        let footer = Self {
+            signature_id: Data::binary(rdr)?,
+            signature: Data::binary(rdr)?,
+        };
+
+        Ok(footer)
     }
 }
