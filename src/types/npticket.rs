@@ -5,31 +5,36 @@ use anyhow::{Result, Ok};
 use byteorder::{ReadBytesExt, BigEndian};
 
 // https://www.psdevwiki.com/ps3/X-I-5-Ticket
-#[derive(Debug)]
-pub struct NpTicket {
-
-}
+// https://github.com/RipleyTom/rpcn/blob/master/src/server/client/ticket.rs
 
 #[derive(Debug)]
 enum SectionType {
-    Body,
-    Footer,
+    TicketData,
+    Signature,
+}
+
+impl SectionType {
+    fn from_id(id: u8) -> Self {
+        match id {
+            0x00 => SectionType::TicketData,
+            0x02 => SectionType::Signature,
+            _ => todo!("Invalid section type {id}"),
+        }
+    }
 }
 
 #[derive(Debug)]
 struct SectionHeader {
     section_type: SectionType,
-    length: u8
+    length: u16,
 }
 
 impl SectionHeader {
     fn parse(rdr: &mut Cursor<Bytes>) -> Result<Self> {
+        rdr.read_u8()?;
         Ok(Self {
-            section_type: match rdr.read_u8()? {
-                0x00 => SectionType::Body,
-                0x02 => SectionType::Footer,
-            },
-            length: rdr.read_u8()?,
+            section_type: SectionType::from_id(rdr.read_u8()?),
+            length: rdr.read_u16::<BigEndian>()?,
         })
     }
 }
@@ -49,9 +54,6 @@ impl Data {
         let data_type = rdr.read_u16::<BigEndian>()?;
         let len = rdr.read_u16::<BigEndian>()?;
 
-        let buf = vec![0; len.into()];
-        rdr.read_exact(&mut buf)?;
-
         match data_type {
             // empty
             0x00 => {
@@ -69,30 +71,31 @@ impl Data {
             },
             // u64
             0x02 => {
-                if len != 4 {
+                if len != 8 {
                     todo!("U64 data has invalid length: {len}")
                 }
                 Ok(Self::U64(rdr.read_u64::<BigEndian>()?))
             },
             // string
             0x04 => {
-                let buf = vec![0; len.into()];
+                let mut buf = vec![0; len.into()];
                 rdr.read_exact(&mut buf)?;
                 Ok(Self::String(String::from_utf8(buf)?))
             },
             // timestamp
             0x07 => {
-                if len != 4 {
+                if len != 8 {
                     todo!("Timestamp data has invalid length: {len}")
                 }
-                Ok(Self::U64(rdr.read_u64::<BigEndian>()?))
+                Ok(Self::Timestamp(rdr.read_u64::<BigEndian>()?))
             },
             // binary
             0x08 => {
-                let buf = vec![0; len.into()];
+                let mut buf = vec![0; len.into()];
                 rdr.read_exact(&mut buf)?;
                 Ok(Self::Binary(buf))
-            }
+            },
+            _ => todo!("Invalid data type {data_type}"),
         }
     }
 
@@ -123,7 +126,7 @@ impl Data {
     fn string(rdr: &mut Cursor<Bytes>) -> Result<String> {
         let data = Self::read(rdr)?;
         if let Data::String(d) = data {
-            return Ok(d);
+            return Ok(d.trim_end_matches('\0').to_string());
         }
         todo!("Expected string data, found {:?}", data);
     }
@@ -143,11 +146,31 @@ impl Data {
         }
         todo!("Expected binary data, found {:?}", data);
     }
+
+    fn binary_as_str(rdr: &mut Cursor<Bytes>) -> Result<String> {
+        let data = Self::read(rdr)?;
+        if let Data::Binary(d) = data {
+            return Ok(String::from_utf8(d)?.trim_end_matches('\0').to_string());
+        }
+        todo!("Expected binary data, found {:?}", data);
+    }
+}
+
+#[derive(Debug)]
+pub struct NpTicket {
+    pub version: (u8, u8),
+    pub data: TicketDataSection,
+    pub signature: SignatureSection,
+    pub data_to_verify: Vec<u8>,
 }
 
 impl NpTicket {
     pub fn parse_from_bytes(bytes: Bytes) -> Result<Self> {
         // TODO: replace todos with proper errors
+
+        // ticket header isn't included in length, so we subtract 8 bytes
+        let real_ticket_len = bytes.len() - 0x8;
+
         let mut rdr = Cursor::new(bytes);
 
         let version = (rdr.read_u8()? >> 4, rdr.read_u8()?);
@@ -155,57 +178,74 @@ impl NpTicket {
         if version != (2, 1) {
             todo!("Unsupported NpTicket version {version:?}");
         }
-        
+
         // four null bytes, bruh
-        rdr.seek(SeekFrom::Current(4));
+        rdr.seek(SeekFrom::Current(4))?;
 
         let ticket_len = rdr.read_u16::<BigEndian>()?;
-        // ticket header isn't included in length, so we subtract 8 bytes
-        if bytes.len() - 0x8 != ticket_len.into() {
-            todo!("Ticket length mismatch, expected = {}, actual = {}", ticket_len, bytes.len() - 0x8);
+        if real_ticket_len != ticket_len as usize {
+            todo!("Ticket length mismatch, expected = {}, actual = {}", ticket_len, real_ticket_len);
         }
 
-        let body = BodySection::parse(&mut rdr)?;
-        let footer = FooterSection::parse(&mut rdr)?;
+        let data_start = rdr.stream_position()? as usize;
+        let data = TicketDataSection::parse(&mut rdr)?;
+        let sig_start = rdr.stream_position()? as usize;
+        let signature = SignatureSection::parse(&mut rdr)?;
+
+        let data_to_verify = match signature.signature_id.as_slice() {
+            // PSN
+            b"\x71\x9f\x1d\x4a" => rdr.into_inner()[..sig_start].to_vec(),
+            // RPCN
+            b"RPCN" => rdr.into_inner()[data_start..sig_start].to_vec(),
+            _ => todo!("Unknown signature ID {:?}", signature.signature_id)
+        };
+
+        Ok(Self {
+            version,
+            data,
+            signature,
+            data_to_verify,
+        })
     }
 }
 
 #[derive(Debug)]
-struct BodySection {
-    issuer_id: u32,
-    issued_date: u64,
-    expire_date: u64,
+pub struct TicketDataSection {
+    pub serial: Vec<u8>,
+    pub issuer_id: u32,
+    pub issued_date: u64,
+    pub expire_date: u64,
 
-    user_id: u64,
-    username: String,
-    country: String,
-    domain: String,
+    pub user_id: u64,
+    pub online_id: String,
+    pub region: String,
+    pub domain: String,
 
-    title_id: String,
+    pub service_id: String,
 
-    status: u32,
+    pub status: u32,
 }
 
-impl BodySection {
+impl TicketDataSection {
     fn parse(rdr: &mut Cursor<Bytes>) -> Result<Self> {
-        let header = SectionHeader::parse(&mut rdr)?;
+        let header = SectionHeader::parse(rdr)?;
         match header.section_type {
-            SectionType::Body => {},
-            _ => todo!("Expected body section, got {:?}", header.section_type),
+            SectionType::TicketData => {},
+            _ => todo!("Expected ticket data section, got {:?}", header.section_type),
         }
 
-        Data::string(rdr)?; // serial id
-        let body = Self {
+        let ticket_data = Self {
+            serial: Data::binary(rdr)?,
             issuer_id: Data::u32(rdr)?,
-            issued_date: Data::u64(rdr)?,
-            expire_date: Data::u64(rdr)?,
+            issued_date: Data::timestamp(rdr)?,
+            expire_date: Data::timestamp(rdr)?,
 
             user_id: Data::u64(rdr)?,
-            username: Data::string(rdr)?,
-            country: Data::string(rdr)?,
+            online_id: Data::string(rdr)?,
+            region: Data::binary_as_str(rdr)?, // no, i'm not going to brazil >:(
             domain: Data::string(rdr)?,
 
-            title_id: Data::string(rdr)?,
+            service_id: Data::binary_as_str(rdr)?,
 
             status: Data::u32(rdr)?,
         };
@@ -214,29 +254,29 @@ impl BodySection {
         Data::empty(rdr)?;
         Data::empty(rdr)?;
 
-        Ok(body)
+        Ok(ticket_data)
     }
 }
 
 #[derive(Debug)]
-struct FooterSection {
-    signature_id: Vec<u8>,
-    signature: Vec<u8>,
+pub struct SignatureSection {
+    pub signature_id: Vec<u8>,
+    pub signature: Vec<u8>,
 }
 
-impl FooterSection {
+impl SignatureSection {
     fn parse(rdr: &mut Cursor<Bytes>) -> Result<Self> {
-        let header = SectionHeader::parse(&mut rdr)?;
+        let header = SectionHeader::parse(rdr)?;
         match header.section_type {
-            SectionType::Footer => {},
-            _ => todo!("Expected footer section, got {:?}", header.section_type),
+            SectionType::Signature => {},
+            _ => todo!("Expected signature section, got {:?}", header.section_type),
         }
 
-        let footer = Self {
+        let signature = Self {
             signature_id: Data::binary(rdr)?,
             signature: Data::binary(rdr)?,
         };
 
-        Ok(footer)
+        Ok(signature)
     }
 }

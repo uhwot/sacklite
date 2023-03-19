@@ -1,12 +1,16 @@
 use actix_web::{Responder, web};
+use log::debug;
 use maud::html;
 
-use crate::responder::Xml;
+use crate::{
+    responder::Xml,
+    types::npticket::NpTicket,
+};
 
 pub async fn login(npticket: web::Bytes) -> impl Responder {
-    // TODO: implement actual login
+    debug!("{:#?}", NpTicket::parse_from_bytes(npticket));
 
-
+    // TODO: verify signature
 
     Xml(
         html! {

@@ -61,7 +61,7 @@ pub async fn verify_digest(mut req: dev::ServiceRequest, next: Next<impl Message
         None => String::new(),
     };
 
-    let req_digest = calc_digest(req.path(), &mm_auth, &body, &config.digest_key);
+    let req_digest = calc_digest(&path, &mm_auth, &body, &config.digest_key);
 
     // the game doesn't start sending digests until after the announcement,
     // so if the request is before that we accept it anyways
