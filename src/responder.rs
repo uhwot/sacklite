@@ -6,6 +6,9 @@ use actix_web::{
     HttpRequest, HttpResponse, Responder,
 };
 
+// basically this but modified slightly
+// https://github.com/robjtede/actix-web-lab/blob/3df0df564e7582694c4d083058515217e0f865a5/actix-web-lab/src/html.rs
+
 /// An XML responder.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Xml(pub String);

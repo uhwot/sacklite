@@ -3,21 +3,27 @@ use std::io::{Cursor, Seek, SeekFrom, Read};
 use actix_web::web::Bytes;
 use anyhow::{Result, Ok};
 use byteorder::{ReadBytesExt, BigEndian};
+use openssl::{sign::Verifier, hash::MessageDigest};
 
+use super::pub_key_store::PubKeyStore;
+
+// useful links
 // https://www.psdevwiki.com/ps3/X-I-5-Ticket
-// https://github.com/RipleyTom/rpcn/blob/master/src/server/client/ticket.rs
+// https://github.com/hallofmeat/Skateboard3Server/blob/1398cb3114da3b8e7e13bf52497c3c9d7c21d4e6/docs/PS3Ticket.md
+// https://github.com/LBPUnion/ProjectLighthouse/tree/b87c16ab7c51337ef386affc52a98ad697cf3295/ProjectLighthouse/Tickets
+// https://github.com/RipleyTom/rpcn/blob/512df608ce59a9715a8e2bada2ff4e5b7abde165/src/server/client/ticket.rs
 
 #[derive(Debug)]
 enum SectionType {
-    TicketData,
-    Signature,
+    Body,
+    Footer,
 }
 
 impl SectionType {
     fn from_id(id: u8) -> Self {
         match id {
-            0x00 => SectionType::TicketData,
-            0x02 => SectionType::Signature,
+            0x00 => SectionType::Body,
+            0x02 => SectionType::Footer,
             _ => todo!("Invalid section type {id}"),
         }
     }
@@ -159,9 +165,9 @@ impl Data {
 #[derive(Debug)]
 pub struct NpTicket {
     pub version: (u8, u8),
-    pub data: TicketDataSection,
-    pub signature: SignatureSection,
-    pub data_to_verify: Vec<u8>,
+    pub data: BodySection,
+    pub footer: FooterSection,
+    data_to_verify: Vec<u8>,
 }
 
 impl NpTicket {
@@ -187,30 +193,38 @@ impl NpTicket {
             todo!("Ticket length mismatch, expected = {}, actual = {}", ticket_len, real_ticket_len);
         }
 
-        let data_start = rdr.stream_position()? as usize;
-        let data = TicketDataSection::parse(&mut rdr)?;
-        let sig_start = rdr.stream_position()? as usize;
-        let signature = SignatureSection::parse(&mut rdr)?;
+        let body_start = rdr.stream_position()? as usize;
+        let body = BodySection::parse(&mut rdr)?;
+        let body_end = rdr.stream_position()? as usize;
+        let signature = FooterSection::parse(&mut rdr)?;
 
-        let data_to_verify = match signature.signature_id.as_slice() {
-            // PSN
-            b"\x71\x9f\x1d\x4a" => rdr.into_inner()[..sig_start].to_vec(),
-            // RPCN
-            b"RPCN" => rdr.into_inner()[data_start..sig_start].to_vec(),
-            _ => todo!("Unknown signature ID {:?}", signature.signature_id)
+        let data_to_verify = match signature.key_id {
+            KeyId::PSN => rdr.into_inner()[..signature.sig_data_start as usize].to_vec(),
+            KeyId::RPCN => rdr.into_inner()[body_start..body_end].to_vec(),
         };
 
         Ok(Self {
             version,
-            data,
-            signature,
+            data: body,
+            footer: signature,
             data_to_verify,
         })
+    }
+
+    pub fn verify_signature(&self, pub_key_store: &PubKeyStore) -> Result<bool> {
+        let (digest_alg, pub_key) = match self.footer.key_id {
+            KeyId::PSN => (MessageDigest::sha1(), &pub_key_store.psn),
+            KeyId::RPCN => (MessageDigest::sha224(), &pub_key_store.rpcn),
+        };
+
+        let mut verifier = Verifier::new(digest_alg, pub_key)?;
+        // TODO: remove null bytes in end of signature
+        Ok(verifier.verify_oneshot(&self.footer.signature, &self.data_to_verify)?)
     }
 }
 
 #[derive(Debug)]
-pub struct TicketDataSection {
+pub struct BodySection {
     pub serial: Vec<u8>,
     pub issuer_id: u32,
     pub issued_date: u64,
@@ -226,15 +240,15 @@ pub struct TicketDataSection {
     pub status: u32,
 }
 
-impl TicketDataSection {
+impl BodySection {
     fn parse(rdr: &mut Cursor<Bytes>) -> Result<Self> {
         let header = SectionHeader::parse(rdr)?;
         match header.section_type {
-            SectionType::TicketData => {},
-            _ => todo!("Expected ticket data section, got {:?}", header.section_type),
+            SectionType::Body => {},
+            _ => todo!("Expected body section, got {:?}", header.section_type),
         }
 
-        let ticket_data = Self {
+        let body = Self {
             serial: Data::binary(rdr)?,
             issuer_id: Data::u32(rdr)?,
             issued_date: Data::timestamp(rdr)?,
@@ -254,29 +268,47 @@ impl TicketDataSection {
         Data::empty(rdr)?;
         Data::empty(rdr)?;
 
-        Ok(ticket_data)
+        Ok(body)
     }
 }
 
 #[derive(Debug)]
-pub struct SignatureSection {
-    pub signature_id: Vec<u8>,
+pub enum KeyId {
+    PSN,
+    RPCN,
+}
+
+impl KeyId {
+    fn from_slice(slice: &[u8]) -> Self {
+        match slice {
+            b"\x71\x9f\x1d\x4a" => Self::PSN,
+            b"RPCN" => Self::RPCN,
+            _ => todo!("Unknown signature key ID {:?}", slice)
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct FooterSection {
+    pub key_id: KeyId,
+    pub sig_data_start: u64,
     pub signature: Vec<u8>,
 }
 
-impl SignatureSection {
+impl FooterSection {
     fn parse(rdr: &mut Cursor<Bytes>) -> Result<Self> {
         let header = SectionHeader::parse(rdr)?;
         match header.section_type {
-            SectionType::Signature => {},
-            _ => todo!("Expected signature section, got {:?}", header.section_type),
+            SectionType::Footer => {},
+            _ => todo!("Expected footer section, got {:?}", header.section_type),
         }
 
-        let signature = Self {
-            signature_id: Data::binary(rdr)?,
+        let footer = Self {
+            key_id: KeyId::from_slice(&Data::binary(rdr)?),
+            sig_data_start: rdr.stream_position()? + 4,
             signature: Data::binary(rdr)?,
         };
 
-        Ok(signature)
+        Ok(footer)
     }
 }

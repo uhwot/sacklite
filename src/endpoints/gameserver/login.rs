@@ -4,11 +4,17 @@ use maud::html;
 
 use crate::{
     responder::Xml,
-    types::npticket::NpTicket,
+    types::{npticket::NpTicket, pub_key_store::PubKeyStore},
 };
 
-pub async fn login(npticket: web::Bytes) -> impl Responder {
-    debug!("{:#?}", NpTicket::parse_from_bytes(npticket));
+pub async fn login(pub_key_store: web::Data<PubKeyStore>, npticket: web::Bytes) -> impl Responder {
+    match NpTicket::parse_from_bytes(npticket) {
+        Ok(t) => {
+            debug!("ticket: {:#?}", t);
+            debug!("ticket verified: {:?}", t.verify_signature(&pub_key_store));
+        },
+        Err(e) => debug!("NpTicket parsing failed: {:?}", e),
+    };
 
     // TODO: verify signature
 
