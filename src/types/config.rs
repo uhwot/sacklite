@@ -13,6 +13,8 @@ pub struct Config {
     pub eula: String,
     pub announcement: String,
     pub verify_client_digest: bool,
+    pub verify_npticket_signature: bool,
+    pub verify_npticket_expiry: bool,
 }
 
 impl Config {

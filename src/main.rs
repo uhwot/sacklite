@@ -6,7 +6,8 @@ use log::{info, warn};
 mod endpoints;
 mod types;
 mod digest;
-pub mod responder;
+mod utils;
+mod responder;
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()>{
