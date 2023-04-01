@@ -46,7 +46,8 @@ pub async fn login(config: web::Data<Config>, pub_key_store: web::Data<PubKeySto
     Ok(Xml(
         xml! {
             loginResult {
-                authTicket { "MM_AUTH=fuck" }
+                // this is replaced in the session hack middleware cause actix-session moment
+                authTicket { "ass" }
                 lbpEnvVer { "sacklite" }
             }
         }.into_string()

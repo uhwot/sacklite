@@ -5,7 +5,7 @@ use actix_web::{
     Error, HttpResponse,
 };
 use actix_web_lab::middleware::Next;
-use actix_http::{StatusCode, h1, header::{HeaderValue, HeaderName}};
+use actix_http::{StatusCode, h1, header::{HeaderValue, HeaderName, COOKIE}};
 
 use log::{info, debug};
 use sha1::{Sha1, Digest};
@@ -56,10 +56,15 @@ pub async fn verify_digest(mut req: dev::ServiceRequest, next: Next<impl Message
         false => req.extract::<Bytes>().await.unwrap(),
     };
 
-    let mm_auth = match req.cookie("MM_AUTH") {
-        Some(cookie) => cookie.value().to_owned(),
-        None => String::new(),
-    };
+    // had to do this stupid shit since actix-web percent-decodes cookies unlike LBP
+    let mut mm_auth = String::new();
+    if let Some(header) = req.headers().get(COOKIE) {
+        if let Ok(header_str) = header.to_str() {
+            if let Some(cookie_val) = header_str.strip_prefix("MM_AUTH=") {
+                mm_auth = cookie_val.to_owned();
+            }
+        }
+    }
 
     let req_digest = calc_digest(&path, &mm_auth, &body, &config.digest_key);
 
