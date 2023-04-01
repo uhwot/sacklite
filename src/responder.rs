@@ -13,13 +13,6 @@ use actix_web::{
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Xml(pub String);
 
-impl Xml {
-    /// Constructs a new `Xml` responder.
-    pub fn new(xml: impl Into<String>) -> Self {
-        Self(xml.into())
-    }
-}
-
 impl Responder for Xml {
     type Body = String;
 

@@ -9,12 +9,14 @@ pub struct Config {
     pub listen_port: u16,
     pub base_path: String,
     pub autodiscover_url: String,
+    pub redis_conn: String,
     pub log_level: String,
     pub eula: String,
     pub announcement: String,
     pub verify_client_digest: bool,
     pub verify_npticket_signature: bool,
     pub verify_npticket_expiry: bool,
+    pub session_secret_key: String,
 }
 
 impl Config {

@@ -1,5 +1,6 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use actix_session::Session;
 use actix_web::{Responder, web, Result, error};
 use log::debug;
 use maud::html as xml;
@@ -13,14 +14,14 @@ use crate::{
     },
 };
 
-pub async fn login(config: web::Data<Config>, pub_key_store: web::Data<PubKeyStore>, bytes: web::Bytes) -> Result<impl Responder> {
+pub async fn login(config: web::Data<Config>, pub_key_store: web::Data<PubKeyStore>, bytes: web::Bytes, session: Session) -> Result<impl Responder> {
     let npticket = NpTicket::parse_from_bytes(bytes).map_err(|e| {
         debug!("{e}");
         error::ErrorBadRequest("NpTicket parsing failed")
     })?;
 
     if config.verify_npticket_expiry {
-        let now = SystemTime::now().duration_since(UNIX_EPOCH).expect("Current time is before the unix epoch, wtf???").as_millis();
+        let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis();
         if npticket.body.expire_date as u128 <= now {
             return Err(error::ErrorUnauthorized("NpTicket is expired"));
         }
@@ -39,6 +40,8 @@ pub async fn login(config: web::Data<Config>, pub_key_store: web::Data<PubKeySto
     }
 
     // TODO: implement sessions
+
+    session.insert("online_id", npticket.body.online_id).unwrap();
 
     Ok(Xml(
         xml! {

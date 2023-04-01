@@ -1,7 +1,5 @@
 use actix_web::web;
 
-use crate::types::pub_key_store::PubKeyStore;
-
 mod message;
 mod login;
 mod enter_level;
@@ -13,7 +11,6 @@ mod client_config;
 pub fn cfg(cfg: &mut web::ServiceConfig) {
     cfg.service(
         web::scope("")
-            .app_data(web::Data::new(PubKeyStore::new().unwrap()))
             // login
             .route("/login", web::post().to(login::login))
             // message
