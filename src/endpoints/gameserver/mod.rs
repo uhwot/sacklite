@@ -1,7 +1,7 @@
 use actix_web::web;
 
 mod message;
-mod login;
+mod auth;
 mod enter_level;
 mod tags;
 mod news;
@@ -12,7 +12,8 @@ pub fn cfg(cfg: &mut web::ServiceConfig) {
     cfg.service(
         web::scope("")
             // login
-            .route("/login", web::post().to(login::login))
+            .route("/login", web::post().to(auth::login))
+            .route("/goodbye", web::post().to(auth::goodbye))
             // message
             .route("/eula", web::get().to(message::eula))
             .route("/announce", web::get().to(message::announce))

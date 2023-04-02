@@ -11,6 +11,7 @@ actix-web-lab = "0.19"
 actix-http = "3.3"
 actix-files = "0.6"
 actix-session = { version = "0.7", features = ["redis-actor-session"] }
+actix-identity = "0.5"
 
 # yes, i'm using an html template engine for xml :P
 maud = "0.24"
@@ -23,7 +24,7 @@ serde_yaml = "0.9"
 
 sha1 = "0.10"
 openssl = "0.10"
-hex-literal = "0.3"
+hex-literal = "0.4"
 base64 = "0.21"
 
 strum = "0.24"

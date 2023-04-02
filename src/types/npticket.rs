@@ -6,7 +6,7 @@ use byteorder::{ReadBytesExt, BigEndian};
 use openssl::{sign::Verifier, hash::MessageDigest};
 
 use super::pub_key_store::PubKeyStore;
-use crate::utils::ticket_reader::*;
+use crate::utils::ticket_read::*;
 
 // useful links
 // https://www.psdevwiki.com/ps3/X-I-5-Ticket

@@ -6,7 +6,7 @@ use strum_macros::{EnumIter, IntoStaticStr};
 use crate::responder::Xml;
 
 // tags for levels
-// only used in LBP1
+// LBP1 only
 #[allow(non_camel_case_types)]
 #[derive(EnumIter, IntoStaticStr)]
 enum Tags {

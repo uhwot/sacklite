@@ -78,12 +78,12 @@ pub async fn verify_digest(mut req: dev::ServiceRequest, next: Next<impl Message
             Some(cl_digest) => {
                 digest_pass = req_digest == cl_digest.to_str().unwrap();
                 if !digest_pass {
-                    info!("Invalid digest, ignoring request");
+                    info!("Digest is invalid, ignoring request");
                     debug!("digest: {req_digest}");
                     debug!("client digest: {cl_digest:?}");
                 }
             },
-            None => info!("Missing digest, ignoring request")
+            None => info!("Digest is missing, ignoring request")
         }
     }
 
