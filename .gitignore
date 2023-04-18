@@ -2,4 +2,6 @@
 
 config.yml
 network_settings.nws
+app.db
 dump.rdb
+.env

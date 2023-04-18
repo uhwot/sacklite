@@ -12,12 +12,20 @@ use crate::{
     types::{
         npticket::NpTicket,
         pub_key_store::PubKeyStore,
-        config::Config, platform::LinkedUserId,
+        config::Config, platform::Platform,
     },
+    DbPool, db::actions::*,
 };
 
-pub async fn login(req: HttpRequest, config: web::Data<Config>, pub_key_store: web::Data<PubKeyStore>, bytes: web::Bytes, session: Session) -> Result<impl Responder> {
-    let npticket = NpTicket::parse_from_bytes(bytes).map_err(|e| {
+pub async fn login(
+    req: HttpRequest,
+    pool: web::Data<DbPool>,
+    config: web::Data<Config>,
+    pub_key_store: web::Data<PubKeyStore>,
+    payload: web::Bytes,
+    session: Session
+) -> Result<impl Responder> {
+    let npticket = NpTicket::parse_from_bytes(payload).map_err(|e| {
         warn!("NpTicket parsing failed");
         debug!("{e}");
         error::ErrorBadRequest("")
@@ -45,8 +53,29 @@ pub async fn login(req: HttpRequest, config: web::Data<Config>, pub_key_store: w
         }
     }
 
-    session.insert("linked_user_id", LinkedUserId::from_npticket(&npticket).to_string()).unwrap();
-    Identity::login(&req.extensions(), npticket.body.online_id).unwrap();
+    let user = web::block(move || {
+        let mut conn = pool.get().expect("couldn't get db connection from pool");
+
+        get_user_by_online_id(&mut conn, &npticket.body.online_id)
+    })
+    .await?
+    .map_err(error::ErrorInternalServerError)?;
+    
+    if let Some(user) = user {
+        let linked_id = match npticket.footer.key_id {
+            Platform::PSN => user.psn_id,
+            Platform::RPCN => user.rpcn_id,
+        }.ok_or(error::ErrorUnauthorized(""))?;
+
+        if linked_id != npticket.body.user_id as i64 {
+            return Err(error::ErrorUnauthorized(""));
+        }
+    }
+
+    
+
+    //session.insert("linked_user_id", LinkedUserId::from_npticket(&npticket).to_string()).unwrap();
+    //Identity::login(&req.extensions(), npticket.body.online_id).unwrap();
 
     Ok(Xml(
         xml! {

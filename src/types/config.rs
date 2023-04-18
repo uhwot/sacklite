@@ -11,8 +11,10 @@ pub struct Config {
     pub autodiscover_url: String,
     pub redis_conn: String,
     pub log_level: String,
+
     pub eula: String,
     pub announcement: String,
+
     pub verify_client_digest: bool,
     pub verify_npticket_signature: bool,
     pub verify_npticket_expiry: bool,

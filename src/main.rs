@@ -13,6 +13,8 @@ use actix_session::{
     config::{CookieContentSecurity, PersistentSession}
 };
 
+use diesel::{r2d2, SqliteConnection};
+
 use env_logger::Builder;
 use log::{info, warn};
 use base64::{Engine as _, engine::general_purpose};
@@ -22,6 +24,9 @@ mod types;
 mod utils;
 mod middleware;
 mod responder;
+mod db;
+
+type DbPool = r2d2::Pool<r2d2::ConnectionManager<SqliteConnection>>;
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()>{
@@ -41,9 +46,15 @@ async fn main() -> std::io::Result<()>{
 
     let session_key = parse_session_key(&config.session_secret_key);
 
+    let manager = r2d2::ConnectionManager::<SqliteConnection>::new("app.db");
+    let pool = r2d2::Pool::builder()
+        .build(manager)
+        .expect("database URL should be valid path to SQLite DB file");
+
     HttpServer::new(move || {
         App::new()
             .app_data(web::Data::new(config.clone()))
+            .app_data(web::Data::new(pool.clone()))
             .service(
                 web::scope(&config.base_path)
                     .configure(endpoints::gameserver::cfg)

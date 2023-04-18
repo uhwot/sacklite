@@ -1,31 +1,18 @@
 use strum_macros::IntoStaticStr;
-
-use super::npticket::{NpTicket, KeyId};
+use anyhow::{Result, bail};
 
 #[derive(Debug, IntoStaticStr)]
-pub enum LinkedUserId {
-    PSN(u64),
-    RPCN(u64),
+pub enum Platform {
+    PSN,
+    RPCN,
 }
 
-impl LinkedUserId {
-    pub fn from_npticket(npticket: &NpTicket) -> Self {
-        let user_id = npticket.body.user_id;
-        match npticket.footer.key_id {
-            KeyId::PSN => Self::PSN(user_id),
-            KeyId::RPCN => Self::RPCN(user_id),
+impl Platform {
+    pub fn from_key_id(key_id: &[u8]) -> Result<Self> {
+        match key_id {
+            b"\x71\x9f\x1d\x4a" => Ok(Self::PSN),
+            b"RPCN" => Ok(Self::RPCN),
+            _ => bail!("Unknown signature key ID {:?}", key_id)
         }
-    }
-
-    pub fn id(&self) -> u64 {
-        match self {
-            Self::PSN(id) => *id,
-            Self::RPCN(id) => *id,
-        }
-    }
-
-    pub fn to_string(&self) -> String {
-        let platform_str: &str = self.into();
-        format!("{}:{}", platform_str, self.id())
     }
 }

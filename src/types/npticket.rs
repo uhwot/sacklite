@@ -6,7 +6,7 @@ use byteorder::{ReadBytesExt, BigEndian};
 use openssl::{sign::Verifier, hash::MessageDigest};
 
 use super::pub_key_store::PubKeyStore;
-use crate::utils::ticket_read::*;
+use crate::{utils::ticket_read::*, types::platform::Platform};
 
 // useful links
 // https://www.psdevwiki.com/ps3/X-I-5-Ticket
@@ -53,8 +53,8 @@ impl NpTicket {
         let signature = FooterSection::parse(&mut rdr)?;
 
         let data_to_verify = match signature.key_id {
-            KeyId::PSN => rdr.into_inner()[..signature.sig_data_start as usize].to_vec(),
-            KeyId::RPCN => rdr.into_inner()[body_start..body_end].to_vec(),
+            Platform::PSN => rdr.into_inner()[..signature.sig_data_start as usize].to_vec(),
+            Platform::RPCN => rdr.into_inner()[body_start..body_end].to_vec(),
         };
 
         Ok(Self {
@@ -67,8 +67,8 @@ impl NpTicket {
 
     pub fn verify_signature(&self, pub_key_store: &PubKeyStore) -> Result<bool> {
         let (digest_alg, pub_key) = match self.footer.key_id {
-            KeyId::PSN => (MessageDigest::sha1(), &pub_key_store.psn),
-            KeyId::RPCN => (MessageDigest::sha224(), &pub_key_store.rpcn),
+            Platform::PSN => (MessageDigest::sha1(), &pub_key_store.psn),
+            Platform::RPCN => (MessageDigest::sha224(), &pub_key_store.rpcn),
         };
 
         let mut verifier = Verifier::new(digest_alg, pub_key)?;
@@ -77,8 +77,8 @@ impl NpTicket {
 
         // PSN signatures are fixed-length and might have extra null bytes at the end
         // so we have to read the length from the SEQUENCE header
-        if let KeyId::PSN = self.footer.key_id {
-            let sig_length = signature.get(1).context("Couldn't get PSN signature length")? + 0x2;
+        if let Platform::PSN = self.footer.key_id {
+            let sig_length = signature.get(1).context("Couldn't read PSN signature length")? + 0x2;
             signature = &signature.get(..sig_length as usize).context("PSN signature length is invalid")?;
         }
 
@@ -136,24 +136,8 @@ impl BodySection {
 }
 
 #[derive(Debug)]
-pub enum KeyId {
-    PSN,
-    RPCN,
-}
-
-impl KeyId {
-    fn from_slice(slice: &[u8]) -> Result<Self> {
-        match slice {
-            b"\x71\x9f\x1d\x4a" => Ok(Self::PSN),
-            b"RPCN" => Ok(Self::RPCN),
-            _ => bail!("Unknown signature key ID {:?}", slice)
-        }
-    }
-}
-
-#[derive(Debug)]
 pub struct FooterSection {
-    pub key_id: KeyId,
+    pub key_id: Platform,
     pub sig_data_start: u64,
     pub signature: Vec<u8>,
 }
@@ -167,7 +151,7 @@ impl FooterSection {
         }
 
         let footer = Self {
-            key_id: KeyId::from_slice(&Data::binary(rdr)?)?,
+            key_id: Platform::from_key_id(&Data::binary(rdr)?)?,
             sig_data_start: rdr.stream_position()? + 0x4,
             signature: Data::binary(rdr)?,
         };
