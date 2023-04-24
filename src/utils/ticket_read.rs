@@ -1,8 +1,8 @@
 use std::io::{Cursor, Read};
 
 use actix_web::web::Bytes;
-use anyhow::{Result, Ok, bail};
-use byteorder::{ReadBytesExt, BigEndian};
+use anyhow::{bail, Ok, Result};
+use byteorder::{BigEndian, ReadBytesExt};
 
 #[derive(Debug)]
 pub enum SectionType {
@@ -65,33 +65,33 @@ impl Data {
                     bail!("U32 data has invalid length: {len}")
                 }
                 Ok(Self::U32(rdr.read_u32::<BigEndian>()?))
-            },
+            }
             // u64
             0x02 => {
                 if len != 8 {
                     bail!("U64 data has invalid length: {len}")
                 }
                 Ok(Self::U64(rdr.read_u64::<BigEndian>()?))
-            },
+            }
             // string
             0x04 => {
                 let mut buf = vec![0; len.into()];
                 rdr.read_exact(&mut buf)?;
                 Ok(Self::String(String::from_utf8(buf)?))
-            },
+            }
             // timestamp
             0x07 => {
                 if len != 8 {
                     bail!("Timestamp data has invalid length: {len}")
                 }
                 Ok(Self::Timestamp(rdr.read_u64::<BigEndian>()?))
-            },
+            }
             // binary
             0x08 => {
                 let mut buf = vec![0; len.into()];
                 rdr.read_exact(&mut buf)?;
                 Ok(Self::Binary(buf))
-            },
+            }
             _ => bail!("Invalid data type {data_type}"),
         }
     }

@@ -1,6 +1,6 @@
-use actix_web::web;
-use actix_web::{Responder, HttpResponse};
 use crate::types::config::Config;
+use actix_web::web;
+use actix_web::{HttpResponse, Responder};
 
 pub async fn eula(config: web::Data<Config>) -> String {
     config.eula.clone()

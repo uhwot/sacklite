@@ -1,12 +1,12 @@
 use std::io::{Cursor, Seek, SeekFrom};
 
 use actix_web::web::Bytes;
-use anyhow::{Result, Ok, bail, Context};
-use byteorder::{ReadBytesExt, BigEndian};
-use openssl::{sign::Verifier, hash::MessageDigest};
+use anyhow::{bail, Context, Ok, Result};
+use byteorder::{BigEndian, ReadBytesExt};
+use openssl::{hash::MessageDigest, sign::Verifier};
 
 use super::pub_key_store::PubKeyStore;
-use crate::{utils::ticket_read::*, types::platform::Platform};
+use crate::{types::platform::Platform, utils::ticket_read::*};
 
 // useful links
 // https://www.psdevwiki.com/ps3/X-I-5-Ticket
@@ -44,7 +44,11 @@ impl NpTicket {
 
         let ticket_len = rdr.read_u16::<BigEndian>()?;
         if real_ticket_len != ticket_len as usize {
-            bail!("Ticket length mismatch, expected = {}, actual = {}", ticket_len, real_ticket_len);
+            bail!(
+                "Ticket length mismatch, expected = {}, actual = {}",
+                ticket_len,
+                real_ticket_len
+            );
         }
 
         let body_start = rdr.stream_position()? as usize;
@@ -53,8 +57,8 @@ impl NpTicket {
         let signature = FooterSection::parse(&mut rdr)?;
 
         let data_to_verify = match signature.key_id {
-            Platform::PSN => rdr.into_inner()[..signature.sig_data_start as usize].to_vec(),
-            Platform::RPCN => rdr.into_inner()[body_start..body_end].to_vec(),
+            Platform::Psn => rdr.into_inner()[..signature.sig_data_start as usize].to_vec(),
+            Platform::Rpcn => rdr.into_inner()[body_start..body_end].to_vec(),
         };
 
         Ok(Self {
@@ -67,8 +71,8 @@ impl NpTicket {
 
     pub fn verify_signature(&self, pub_key_store: &PubKeyStore) -> Result<bool> {
         let (digest_alg, pub_key) = match self.footer.key_id {
-            Platform::PSN => (MessageDigest::sha1(), &pub_key_store.psn),
-            Platform::RPCN => (MessageDigest::sha224(), &pub_key_store.rpcn),
+            Platform::Psn => (MessageDigest::sha1(), &pub_key_store.psn),
+            Platform::Rpcn => (MessageDigest::sha224(), &pub_key_store.rpcn),
         };
 
         let mut verifier = Verifier::new(digest_alg, pub_key)?;
@@ -77,9 +81,14 @@ impl NpTicket {
 
         // PSN signatures are fixed-length and might have extra null bytes at the end
         // so we have to read the length from the SEQUENCE header
-        if let Platform::PSN = self.footer.key_id {
-            let sig_length = signature.get(1).context("Couldn't read PSN signature length")? + 0x2;
-            signature = &signature.get(..sig_length as usize).context("PSN signature length is invalid")?;
+        if let Platform::Psn = self.footer.key_id {
+            let sig_length = signature
+                .get(1)
+                .context("Couldn't read PSN signature length")?
+                + 0x2;
+            signature = signature
+                .get(..sig_length as usize)
+                .context("PSN signature length is invalid")?;
         }
 
         Ok(verifier.verify_oneshot(signature, &self.data_to_verify)?)
@@ -107,7 +116,7 @@ impl BodySection {
     fn parse(rdr: &mut Cursor<Bytes>) -> Result<Self> {
         let header = SectionHeader::parse(rdr)?;
         match header.section_type {
-            SectionType::Body => {},
+            SectionType::Body => {}
             _ => bail!("Expected body section, got {:?}", header.section_type),
         }
 
@@ -146,7 +155,7 @@ impl FooterSection {
     fn parse(rdr: &mut Cursor<Bytes>) -> Result<Self> {
         let header = SectionHeader::parse(rdr)?;
         match header.section_type {
-            SectionType::Footer => {},
+            SectionType::Footer => {}
             _ => bail!("Expected footer section, got {:?}", header.section_type),
         }
 

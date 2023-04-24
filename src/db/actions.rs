@@ -3,7 +3,7 @@ use uuid::Uuid;
 
 use super::models;
 
-type DbError = Box<dyn std::error::Error + Send + Sync>;
+pub type DbError = Box<dyn std::error::Error + Send + Sync>;
 
 pub fn get_user_by_uuid(
     conn: &mut SqliteConnection,
@@ -11,12 +11,10 @@ pub fn get_user_by_uuid(
 ) -> Result<Option<models::User>, DbError> {
     use super::schema::user::dsl::*;
 
-    Ok(
-        user
-            .filter(id.eq(uuid.to_string()))
-            .first::<models::User>(conn)
-            .optional()?
-    )
+    Ok(user
+        .filter(id.eq(uuid.to_string()))
+        .first::<models::User>(conn)
+        .optional()?)
 }
 
 pub fn get_user_by_online_id(
@@ -25,18 +23,13 @@ pub fn get_user_by_online_id(
 ) -> Result<Option<models::User>, DbError> {
     use super::schema::user::dsl::*;
 
-    Ok(
-        user
-            .filter(online_id.eq(oid))
-            .first::<models::User>(conn)
-            .optional()?
-    )
+    Ok(user
+        .filter(online_id.eq(oid))
+        .first::<models::User>(conn)
+        .optional()?)
 }
 
-pub fn insert_new_user(
-    conn: &mut SqliteConnection,
-    oid: &str,
-) -> Result<Uuid, DbError> {
+pub fn insert_new_user(conn: &mut SqliteConnection, oid: &str) -> Result<Uuid, DbError> {
     use super::schema::user::dsl::*;
 
     let uuid = Uuid::new_v4();
@@ -58,8 +51,7 @@ pub fn set_user_psn_id(
 ) -> Result<(), DbError> {
     use super::schema::user::dsl::*;
 
-    diesel::update(user
-        .filter(id.eq(uid.to_string())))
+    diesel::update(user.filter(id.eq(uid.to_string())))
         .set(psn_id.eq(linked_id))
         .execute(conn)?;
 
@@ -73,8 +65,7 @@ pub fn set_user_rpcn_id(
 ) -> Result<(), DbError> {
     use super::schema::user::dsl::*;
 
-    diesel::update(user
-        .filter(id.eq(uid.to_string())))
+    diesel::update(user.filter(id.eq(uid.to_string())))
         .set(rpcn_id.eq(linked_id))
         .execute(conn)?;
 

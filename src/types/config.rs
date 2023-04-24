@@ -1,6 +1,6 @@
 use std::fs::File;
 
-use serde::{Deserialize};
+use serde::Deserialize;
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct Config {
@@ -15,6 +15,8 @@ pub struct Config {
     pub eula: String,
     pub announcement: String,
 
+    pub create_user_on_connect: bool,
+
     pub verify_client_digest: bool,
     pub verify_npticket_signature: bool,
     pub verify_npticket_expiry: bool,
@@ -28,4 +30,3 @@ impl Config {
         config
     }
 }
-

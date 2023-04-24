@@ -1,2 +1,2 @@
-pub mod gameserver;
 pub mod autodiscover;
+pub mod gameserver;

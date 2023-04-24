@@ -1,14 +1,18 @@
+use actix_http::{
+    h1,
+    header::{HeaderName, HeaderValue, COOKIE},
+    StatusCode,
+};
 use actix_web::{
-    body::{EitherBody, MessageBody, BodySize},
+    body::{BodySize, EitherBody, MessageBody},
     dev::{self, ServiceResponse},
     web::{Bytes, Data},
     Error, HttpResponse,
 };
 use actix_web_lab::middleware::Next;
-use actix_http::{StatusCode, h1, header::{HeaderValue, HeaderName, COOKIE}};
 
-use log::{info, debug};
-use sha1::{Sha1, Digest};
+use log::{debug, info};
+use sha1::{Digest, Sha1};
 
 use crate::types::config::Config;
 
@@ -34,7 +38,10 @@ fn calc_digest(path: &str, mm_auth: &str, body: &Bytes, digest_key: &str) -> Str
     format!("{:x}", sha1.finalize())
 }
 
-pub async fn verify_digest(mut req: dev::ServiceRequest, next: Next<impl MessageBody + 'static>) -> Result<ServiceResponse<EitherBody<impl MessageBody>>, Error> {
+pub async fn verify_digest(
+    mut req: dev::ServiceRequest,
+    next: Next<impl MessageBody + 'static>,
+) -> Result<ServiceResponse<EitherBody<impl MessageBody>>, Error> {
     let config = req.app_data::<Data<Config>>().unwrap().clone();
 
     let path = req.path().to_owned();
@@ -82,8 +89,8 @@ pub async fn verify_digest(mut req: dev::ServiceRequest, next: Next<impl Message
                     debug!("digest: {req_digest}");
                     debug!("client digest: {cl_digest:?}");
                 }
-            },
-            None => info!("Digest is missing, ignoring request")
+            }
+            None => info!("Digest is missing, ignoring request"),
         }
     }
 
@@ -99,7 +106,10 @@ pub async fn verify_digest(mut req: dev::ServiceRequest, next: Next<impl Message
 
     let mut res = next.call(req).await?;
 
-    res.headers_mut().insert(HeaderName::from_static("x-digest-b"), HeaderValue::from_str(&req_digest).unwrap());
+    res.headers_mut().insert(
+        HeaderName::from_static("x-digest-b"),
+        HeaderValue::from_str(&req_digest).unwrap(),
+    );
 
     // code stolen from here:
     // https://github.com/chriswk/actix-middleware-etag/blob/fe10145fa730d9c45deb7e05c594ad5760b9761a/src/lib.rs#L103
@@ -108,13 +118,16 @@ pub async fn verify_digest(mut req: dev::ServiceRequest, next: Next<impl Message
         BodySize::Sized(_size) => {
             let bytes = body.try_into_bytes().unwrap_or_else(|_| Bytes::new());
             payload = bytes.clone();
-            bytes.clone().boxed()
+            bytes.boxed()
         }
         _ => body.boxed(),
     });
 
     let resp_digest = calc_digest(&path, &mm_auth, &payload, &config.digest_key);
-    res.headers_mut().insert(HeaderName::from_static("x-digest-a"), HeaderValue::from_str(&resp_digest).unwrap());
+    res.headers_mut().insert(
+        HeaderName::from_static("x-digest-a"),
+        HeaderValue::from_str(&resp_digest).unwrap(),
+    );
 
     Ok(res.map_into_left_body())
 }

@@ -1,6 +1,6 @@
+use crate::types::config::Config;
 use actix_web::{web, Responder};
 use serde::Serialize;
-use crate::types::config::Config;
 
 // docs:
 // https://github.com/LittleBigRefresh/Docs/blob/main/autodiscover-api.md

@@ -1,13 +1,16 @@
+use actix_http::header::SET_COOKIE;
 use actix_web::{
-    body::{MessageBody, BodySize},
+    body::{BodySize, MessageBody},
     dev::{self, ServiceResponse},
     web::Bytes,
     Error,
 };
 use actix_web_lab::middleware::Next;
-use actix_http::header::SET_COOKIE;
 
-pub async fn session_hack(req: dev::ServiceRequest, next: Next<impl MessageBody + 'static>) -> Result<ServiceResponse<impl MessageBody>, Error> {
+pub async fn session_hack(
+    req: dev::ServiceRequest,
+    next: Next<impl MessageBody + 'static>,
+) -> Result<ServiceResponse<impl MessageBody>, Error> {
     let path = req.path().to_owned();
     let mut res = next.call(req).await?;
 
@@ -35,6 +38,6 @@ pub async fn session_hack(req: dev::ServiceRequest, next: Next<impl MessageBody 
         }
         _ => body.boxed(),
     });
-    
+
     Ok(res)
 }

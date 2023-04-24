@@ -1,35 +1,33 @@
 use actix_identity::IdentityMiddleware;
+use actix_session::{
+    config::{CookieContentSecurity, PersistentSession},
+    storage::RedisActorSessionStore,
+    SessionMiddleware,
+};
 use actix_web::{
-    web,
-    App,
-    HttpServer,
-    middleware::{Logger, Compress, Condition},
-    cookie::{Key, time::Duration}
+    cookie::{time::Duration, Key},
+    middleware::{Compress, Condition, Logger},
+    web, App, HttpServer,
 };
 use actix_web_lab::middleware::from_fn;
-use actix_session::{
-    SessionMiddleware,
-    storage::RedisActorSessionStore,
-    config::{CookieContentSecurity, PersistentSession}
-};
 
 use diesel::{r2d2, SqliteConnection};
 
+use base64::{engine::general_purpose, Engine as _};
 use env_logger::Builder;
 use log::{info, warn};
-use base64::{Engine as _, engine::general_purpose};
 
+mod db;
 mod endpoints;
-mod types;
-mod utils;
 mod middleware;
 mod responder;
-mod db;
+mod types;
+mod utils;
 
 type DbPool = r2d2::Pool<r2d2::ConnectionManager<SqliteConnection>>;
 
 #[actix_web::main]
-async fn main() -> std::io::Result<()>{
+async fn main() -> std::io::Result<()> {
     let config = types::config::Config::parse_from_file("config.yml");
 
     Builder::new().parse_filters(&config.log_level).init();
@@ -58,8 +56,13 @@ async fn main() -> std::io::Result<()>{
             .service(
                 web::scope(&config.base_path)
                     .configure(endpoints::gameserver::cfg)
-                    .app_data(web::Data::new(types::pub_key_store::PubKeyStore::new().unwrap()))
-                    .wrap(Condition::new(digest_key_present, from_fn(middleware::digest::verify_digest)))
+                    .app_data(web::Data::new(
+                        types::pub_key_store::PubKeyStore::new().unwrap(),
+                    ))
+                    .wrap(Condition::new(
+                        digest_key_present,
+                        from_fn(middleware::digest::verify_digest),
+                    ))
                     .wrap(IdentityMiddleware::default())
                     .wrap(
                         SessionMiddleware::builder(
@@ -69,13 +72,16 @@ async fn main() -> std::io::Result<()>{
                         .cookie_name("MM_AUTH".to_string())
                         .cookie_content_security(CookieContentSecurity::Signed)
                         .session_lifecycle(
-                            PersistentSession::default().session_ttl(Duration::hours(1))
+                            PersistentSession::default().session_ttl(Duration::hours(1)),
                         )
-                        .build()
+                        .build(),
                     )
-                    .wrap(from_fn(middleware::session_hack::session_hack))
+                    .wrap(from_fn(middleware::session_hack::session_hack)),
             )
-            .route("/autodiscover", web::get().to(endpoints::autodiscover::autodiscover))
+            .route(
+                "/autodiscover",
+                web::get().to(endpoints::autodiscover::autodiscover),
+            )
             .wrap(Compress::default())
             .wrap(Logger::default())
     })
@@ -86,7 +92,9 @@ async fn main() -> std::io::Result<()>{
 
 fn parse_session_key(key: &str) -> Key {
     let base64 = general_purpose::STANDARD;
-    let key = base64.decode(key).expect("Session secret key isn't valid base64");
+    let key = base64
+        .decode(key)
+        .expect("Session secret key isn't valid base64");
     match key.as_slice() {
         [] => {
             info!("Session secret key is empty, generating random one...");
@@ -94,7 +102,7 @@ fn parse_session_key(key: &str) -> Key {
             info!("Key: {}", base64.encode(key.master()));
             info!("Copy this into your config.yml file!");
             key
-        },
+        }
         key => Key::from(key),
     }
 }

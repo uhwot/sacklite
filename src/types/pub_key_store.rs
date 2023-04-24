@@ -1,8 +1,8 @@
-use anyhow::{Result, Ok};
+use anyhow::{Ok, Result};
 use openssl::bn::BigNum;
 use openssl::ec::*;
 use openssl::nid::Nid;
-use openssl::pkey::{Public, PKey};
+use openssl::pkey::{PKey, Public};
 
 use hex_literal::hex;
 
