@@ -1,4 +1,4 @@
-use crate::types::config::Config;
+use crate::types::Config;
 use actix_web::{web, Responder};
 use serde::Serialize;
 

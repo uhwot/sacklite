@@ -6,6 +6,6 @@ diesel::table! {
         online_id -> Text,
         psn_id -> Nullable<BigInt>,
         rpcn_id -> Nullable<BigInt>,
-        created_at -> BigInt,
+        created_at -> Timestamp,
     }
 }

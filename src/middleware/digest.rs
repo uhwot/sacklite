@@ -14,7 +14,7 @@ use actix_web_lab::middleware::Next;
 use log::{debug, info};
 use sha1::{Digest, Sha1};
 
-use crate::types::config::Config;
+use crate::types::Config;
 
 const EXEMPT_PATHS: [&str; 8] = [
     "/login",

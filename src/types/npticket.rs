@@ -147,7 +147,7 @@ impl BodySection {
 #[derive(Debug)]
 pub struct FooterSection {
     pub key_id: Platform,
-    pub sig_data_start: u64,
+    sig_data_start: u64,
     pub signature: Vec<u8>,
 }
 

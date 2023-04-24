@@ -28,7 +28,7 @@ type DbPool = r2d2::Pool<r2d2::ConnectionManager<SqliteConnection>>;
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
-    let config = types::config::Config::parse_from_file("config.yml");
+    let config = types::Config::parse_from_file("config.yml");
 
     Builder::new().parse_filters(&config.log_level).init();
 
@@ -56,12 +56,10 @@ async fn main() -> std::io::Result<()> {
             .service(
                 web::scope(&config.base_path)
                     .configure(endpoints::gameserver::cfg)
-                    .app_data(web::Data::new(
-                        types::pub_key_store::PubKeyStore::new().unwrap(),
-                    ))
+                    .app_data(web::Data::new(types::PubKeyStore::new().unwrap()))
                     .wrap(Condition::new(
                         digest_key_present,
-                        from_fn(middleware::digest::verify_digest),
+                        from_fn(middleware::verify_digest),
                     ))
                     .wrap(IdentityMiddleware::default())
                     .wrap(
@@ -76,7 +74,7 @@ async fn main() -> std::io::Result<()> {
                         )
                         .build(),
                     )
-                    .wrap(from_fn(middleware::session_hack::session_hack)),
+                    .wrap(from_fn(middleware::session_hack)),
             )
             .route(
                 "/autodiscover",

@@ -88,7 +88,7 @@ dependencies = [
  "http",
  "httparse",
  "httpdate",
- "itoa 1.0.5",
+ "itoa",
  "language-tags",
  "local-channel",
  "mime",
@@ -273,7 +273,7 @@ dependencies = [
  "futures-core",
  "futures-util",
  "http",
- "itoa 1.0.5",
+ "itoa",
  "language-tags",
  "log",
  "mime",
@@ -415,9 +415,9 @@ dependencies = [
 
 [[package]]
 name = "aho-corasick"
-version = "0.7.20"
+version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cc936419f96fa211c1b9166887b38e5e40b19958e5b895be7c1f93adec7071ac"
+checksum = "67fc08ce920c31afb70f013dcce1bfc3a3195de6a228474e45e1f145b36f8d04"
 dependencies = [
  "memchr",
 ]
@@ -617,7 +617,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "af91f40b7355f82b0a891f50e70399475945bb0b0da4f1700ce60761c9d3e359"
 dependencies = [
  "csv-core",
- "itoa 1.0.5",
+ "itoa",
  "ryu",
  "serde",
 ]
@@ -662,6 +662,7 @@ dependencies = [
  "diesel_derives",
  "libsqlite3-sys",
  "r2d2",
+ "time",
 ]
 
 [[package]]
@@ -938,7 +939,7 @@ checksum = "bd6effc99afb63425aff9b05836f029929e345a6148a14b7ecd5ab67af944482"
 dependencies = [
  "bytes",
  "fnv",
- "itoa 1.0.5",
+ "itoa",
 ]
 
 [[package]]
@@ -1042,12 +1043,6 @@ dependencies = [
 
 [[package]]
 name = "itoa"
-version = "0.4.8"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b71991ff56294aa922b450139ee08b3bfc70982c6b2c7562771375cf73542dd4"
-
-[[package]]
-name = "itoa"
 version = "1.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fad582f4b9e86b6caa621cabeb0963332d92eea04729ab12892c2533951e6440"
@@ -1119,19 +1114,19 @@ dependencies = [
 
 [[package]]
 name = "maud"
-version = "0.24.0"
+version = "0.25.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "19aff2cd19eb4b93df29efa602652513b0f731f1d3474f6e377f763fddf61e58"
+checksum = "b0bab19cef8a7fe1c18a43e881793bfc9d4ea984befec3ae5bd0415abf3ecf00"
 dependencies = [
- "itoa 0.4.8",
+ "itoa",
  "maud_macros",
 ]
 
 [[package]]
 name = "maud_macros"
-version = "0.24.0"
+version = "0.25.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e5c114f6f24b08fdd4a25d2fb87a8b140df56b577723247b382e8b04c583f2eb"
+checksum = "0be95d66c3024ffce639216058e5bae17a83ecaf266ffc6e4d060ad447c9eed2"
 dependencies = [
  "proc-macro-error",
  "proc-macro2",
@@ -1429,9 +1424,9 @@ dependencies = [
 
 [[package]]
 name = "regex"
-version = "1.7.1"
+version = "1.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "48aaa5748ba571fb95cd2c85c09f629215d3a6ece942baa100950af03a34f733"
+checksum = "af83e617f331cc6ae2da5443c602dfa5af81e517212d9d611a5b3ba1777b5370"
 dependencies = [
  "aho-corasick",
  "memchr",
@@ -1440,9 +1435,9 @@ dependencies = [
 
 [[package]]
 name = "regex-syntax"
-version = "0.6.28"
+version = "0.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "456c603be3e8d448b072f410900c09faf164fbce2d480456f50eea6e25f9c848"
+checksum = "a5996294f19bd3aae0453a862ad728f60e6600695733dd5df01da90c54363a3c"
 
 [[package]]
 name = "rustc_version"
@@ -1498,12 +1493,14 @@ dependencies = [
  "log",
  "maud",
  "openssl",
+ "regex",
  "serde",
  "serde_yaml",
  "sha1",
  "strum",
  "strum_macros",
  "thiserror",
+ "time",
  "uuid",
 ]
 
@@ -1556,7 +1553,7 @@ checksum = "53192e38d5c88564b924dbe9b60865ecbb71b81d38c4e61c817cffd3e36ef696"
 dependencies = [
  "form_urlencoded",
  "indexmap",
- "itoa 1.0.5",
+ "itoa",
  "ryu",
  "serde",
 ]
@@ -1567,7 +1564,7 @@ version = "1.0.93"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cad406b69c91885b5107daf2c29572f6c8cdb3c66826821e286c533490c0bc76"
 dependencies = [
- "itoa 1.0.5",
+ "itoa",
  "ryu",
  "serde",
 ]
@@ -1579,7 +1576,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d3491c14715ca2294c4d6a88f15e84739788c1d030eed8c110436aafdaa2f3fd"
 dependencies = [
  "form_urlencoded",
- "itoa 1.0.5",
+ "itoa",
  "ryu",
  "serde",
 ]
@@ -1591,7 +1588,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8fb06d4b6cdaef0e0c51fa881acb721bed3c924cfaa71d9c94a3b771dfdf6567"
 dependencies = [
  "indexmap",
- "itoa 1.0.5",
+ "itoa",
  "ryu",
  "serde",
  "unsafe-libyaml",
@@ -1724,7 +1721,7 @@ version = "0.3.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cd0cbfecb4d19b5ea75bb31ad904eb5b9fa13f21079c3b92017ebdf4999a5890"
 dependencies = [
- "itoa 1.0.5",
+ "itoa",
  "serde",
  "time-core",
  "time-macros",

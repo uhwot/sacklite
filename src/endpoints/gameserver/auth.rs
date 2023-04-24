@@ -3,14 +3,14 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use actix_identity::Identity;
 use actix_session::Session;
 use actix_web::{error, web, HttpMessage, HttpRequest, HttpResponse, Responder, Result};
-use log::{debug, warn};
+use log::{debug, warn, error};
 use maud::html as xml;
 use thiserror::Error;
 
 use crate::{
-    db::actions::*,
+    db::{actions::*, wrap_to_u64},
     responder::Xml,
-    types::{config::Config, npticket::NpTicket, platform::Platform, pub_key_store::PubKeyStore},
+    types::{Config, GameVersion, NpTicket, Platform, PubKeyStore},
     DbPool,
 };
 
@@ -27,6 +27,8 @@ pub async fn login(
         debug!("{e}");
         error::ErrorBadRequest("")
     })?;
+
+    debug!("{npticket:#?}");
 
     if config.verify_npticket_expiry {
         let now = SystemTime::now()
@@ -58,19 +60,24 @@ pub async fn login(
 
     let user = web::block(move || get_login_user(&pool, npticket, &config)).await?;
 
-    let (uuid, online_id, platform) = match user {
+    let (uuid, online_id, platform, game_version) = match user {
         Ok(user) => Ok(user),
         Err(e) => match e {
             LoginError::UserError => Err(error::ErrorUnauthorized("")),
-            LoginError::DbError(_) => Err(error::ErrorInternalServerError("")),
+            LoginError::DbError(e) => {
+                error!("Database error: {e}");
+                Err(error::ErrorInternalServerError(""))
+            },
         },
     }?;
 
     let platform: &str = platform.into();
+    let game_version: &str = game_version.into();
 
     Identity::login(&req.extensions(), uuid).unwrap();
     session.insert("online_id", online_id).unwrap();
     session.insert("platform", platform).unwrap();
+    session.insert("game_version", game_version).unwrap();
 
     Ok(Xml(xml! {
         loginResult {
@@ -94,8 +101,13 @@ fn get_login_user(
     pool: &web::Data<DbPool>,
     npticket: NpTicket,
     config: &web::Data<Config>,
-) -> std::result::Result<(String, String, Platform), LoginError> {
+) -> std::result::Result<(String, String, Platform, GameVersion), LoginError> {
     let mut conn = pool.get().expect("Couldn't get db connection from pool");
+
+    let game_version = match GameVersion::from_service_id(&npticket.body.service_id) {
+        Ok(ver) => ver,
+        Err(_) => return Err(LoginError::UserError),
+    };
 
     let user =
         get_user_by_online_id(&mut conn, &npticket.body.online_id).map_err(LoginError::DbError)?;
@@ -107,11 +119,16 @@ fn get_login_user(
         }
         .ok_or(LoginError::UserError)?;
 
-        if linked_id != npticket.body.user_id as i64 {
+        if wrap_to_u64(linked_id) != npticket.body.user_id {
             return Err(LoginError::UserError);
         }
 
-        return Ok((user.id, user.online_id, npticket.footer.key_id));
+        return Ok((
+            user.id,
+            user.online_id,
+            npticket.footer.key_id,
+            game_version,
+        ));
     }
 
     if !config.create_user_on_connect {
@@ -120,9 +137,9 @@ fn get_login_user(
 
     let uuid = insert_new_user(&mut conn, &npticket.body.online_id).map_err(LoginError::DbError)?;
     match npticket.footer.key_id {
-        Platform::Psn => set_user_psn_id(&mut conn, uuid, Some(npticket.body.user_id as i64))
+        Platform::Psn => set_user_psn_id(&mut conn, uuid, Some(npticket.body.user_id))
             .map_err(LoginError::DbError)?,
-        Platform::Rpcn => set_user_rpcn_id(&mut conn, uuid, Some(npticket.body.user_id as i64))
+        Platform::Rpcn => set_user_rpcn_id(&mut conn, uuid, Some(npticket.body.user_id))
             .map_err(LoginError::DbError)?,
     };
 
@@ -130,10 +147,11 @@ fn get_login_user(
         uuid.to_string(),
         npticket.body.online_id,
         npticket.footer.key_id,
+        game_version,
     ))
 }
 
-pub async fn goodbye(_: Identity, session: Session) -> Result<impl Responder> {
+pub async fn goodbye(_: Identity, session: Session) -> impl Responder {
     session.purge();
-    Ok(HttpResponse::Ok())
+    HttpResponse::Ok()
 }

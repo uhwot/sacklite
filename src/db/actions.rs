@@ -1,7 +1,7 @@
 use diesel::prelude::*;
 use uuid::Uuid;
 
-use super::models;
+use super::{models, wrap_to_i64};
 
 pub type DbError = Box<dyn std::error::Error + Send + Sync>;
 
@@ -47,9 +47,11 @@ pub fn insert_new_user(conn: &mut SqliteConnection, oid: &str) -> Result<Uuid, D
 pub fn set_user_psn_id(
     conn: &mut SqliteConnection,
     uid: Uuid,
-    linked_id: Option<i64>,
+    linked_id: Option<u64>,
 ) -> Result<(), DbError> {
     use super::schema::user::dsl::*;
+
+    let linked_id = linked_id.map(wrap_to_i64);
 
     diesel::update(user.filter(id.eq(uid.to_string())))
         .set(psn_id.eq(linked_id))
@@ -61,9 +63,11 @@ pub fn set_user_psn_id(
 pub fn set_user_rpcn_id(
     conn: &mut SqliteConnection,
     uid: Uuid,
-    linked_id: Option<i64>,
+    linked_id: Option<u64>,
 ) -> Result<(), DbError> {
     use super::schema::user::dsl::*;
+
+    let linked_id = linked_id.map(wrap_to_i64);
 
     diesel::update(user.filter(id.eq(uid.to_string())))
         .set(rpcn_id.eq(linked_id))
