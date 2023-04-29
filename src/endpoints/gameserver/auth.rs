@@ -3,12 +3,14 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use actix_identity::Identity;
 use actix_session::Session;
 use actix_web::{error, web, HttpMessage, HttpRequest, HttpResponse, Responder, Result};
+use bigdecimal::ToPrimitive;
 use log::{debug, warn, error};
 use maud::html as xml;
 use thiserror::Error;
+use uuid::Uuid;
 
 use crate::{
-    db::{actions::*, wrap_to_u64},
+    db::actions::*,
     responder::Xml,
     types::{Config, GameVersion, NpTicket, Platform, PubKeyStore},
     DbPool,
@@ -74,7 +76,7 @@ pub async fn login(
     let platform: &str = platform.into();
     let game_version: &str = game_version.into();
 
-    Identity::login(&req.extensions(), uuid).unwrap();
+    Identity::login(&req.extensions(), uuid.to_string()).unwrap();
     session.insert("online_id", online_id).unwrap();
     session.insert("platform", platform).unwrap();
     session.insert("game_version", game_version).unwrap();
@@ -101,7 +103,7 @@ fn get_login_user(
     pool: &web::Data<DbPool>,
     npticket: NpTicket,
     config: &web::Data<Config>,
-) -> std::result::Result<(String, String, Platform, GameVersion), LoginError> {
+) -> std::result::Result<(Uuid, String, Platform, GameVersion), LoginError> {
     let mut conn = pool.get().expect("Couldn't get db connection from pool");
 
     let game_version = match GameVersion::from_service_id(&npticket.body.service_id) {
@@ -119,7 +121,7 @@ fn get_login_user(
         }
         .ok_or(LoginError::UserError)?;
 
-        if wrap_to_u64(linked_id) != npticket.body.user_id {
+        if linked_id.to_u64().unwrap() != npticket.body.user_id {
             return Err(LoginError::UserError);
         }
 
@@ -144,7 +146,7 @@ fn get_login_user(
     };
 
     Ok((
-        uuid.to_string(),
+        uuid,
         npticket.body.online_id,
         npticket.footer.key_id,
         game_version,

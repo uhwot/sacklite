@@ -11,7 +11,7 @@ use actix_web::{
 };
 use actix_web_lab::middleware::from_fn;
 
-use diesel::{r2d2, SqliteConnection};
+use diesel::{r2d2, PgConnection};
 
 use base64::{engine::general_purpose, Engine as _};
 use env_logger::Builder;
@@ -24,7 +24,7 @@ mod responder;
 mod types;
 mod utils;
 
-type DbPool = r2d2::Pool<r2d2::ConnectionManager<SqliteConnection>>;
+type DbPool = r2d2::Pool<r2d2::ConnectionManager<PgConnection>>;
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
@@ -44,10 +44,10 @@ async fn main() -> std::io::Result<()> {
 
     let session_key = parse_session_key(&config.session_secret_key);
 
-    let manager = r2d2::ConnectionManager::<SqliteConnection>::new("app.db");
+    let manager = r2d2::ConnectionManager::<PgConnection>::new(&config.db_conn);
     let pool = r2d2::Pool::builder()
         .build(manager)
-        .expect("database URL should be valid path to SQLite DB file");
+        .expect("database URL should be valid Postgres connection url");
 
     HttpServer::new(move || {
         App::new()

@@ -1,21 +1,23 @@
-use diesel::{prelude::*};
-use time::PrimitiveDateTime;
+use std::time::SystemTime;
 
-use super::schema::user;
+use bigdecimal::BigDecimal;
+use diesel::{prelude::*};
+use uuid::Uuid;
+
+use super::schema::users;
 
 #[derive(Queryable)]
 pub struct User {
-    pub id: String,
+    pub id: Uuid,
     pub online_id: String,
-    // linked ids are wrapped from u64 nums
-    pub psn_id: Option<i64>,
-    pub rpcn_id: Option<i64>,
-    pub created_at: PrimitiveDateTime,
+    pub psn_id: Option<BigDecimal>,
+    pub rpcn_id: Option<BigDecimal>,
+    pub created_at: SystemTime,
 }
 
 #[derive(Insertable)]
-#[diesel(table_name = user)]
+#[diesel(table_name = users)]
 pub struct NewUser {
-    pub id: String,
+    pub id: Uuid,
     pub online_id: String,
 }

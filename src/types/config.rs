@@ -9,6 +9,7 @@ pub struct Config {
     pub listen_port: u16,
     pub base_path: String,
     pub autodiscover_url: String,
+    pub db_conn: String,
     pub redis_conn: String,
     pub log_level: String,
 

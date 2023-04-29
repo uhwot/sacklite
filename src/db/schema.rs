@@ -1,11 +1,11 @@
 // @generated automatically by Diesel CLI.
 
 diesel::table! {
-    user (id) {
-        id -> Text,
-        online_id -> Text,
-        psn_id -> Nullable<BigInt>,
-        rpcn_id -> Nullable<BigInt>,
+    users (id) {
+        id -> Uuid,
+        online_id -> Varchar,
+        psn_id -> Nullable<Numeric>,
+        rpcn_id -> Nullable<Numeric>,
         created_at -> Timestamp,
     }
 }

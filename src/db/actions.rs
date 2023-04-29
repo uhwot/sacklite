@@ -1,42 +1,43 @@
+use bigdecimal::BigDecimal;
 use diesel::prelude::*;
 use uuid::Uuid;
 
-use super::{models, wrap_to_i64};
+use super::models;
 
 pub type DbError = Box<dyn std::error::Error + Send + Sync>;
 
 pub fn get_user_by_uuid(
-    conn: &mut SqliteConnection,
+    conn: &mut PgConnection,
     uuid: Uuid,
 ) -> Result<Option<models::User>, DbError> {
-    use super::schema::user::dsl::*;
+    use super::schema::users::dsl::*;
 
-    Ok(user
-        .filter(id.eq(uuid.to_string()))
+    Ok(users
+        .filter(id.eq(uuid))
         .first::<models::User>(conn)
         .optional()?)
 }
 
 pub fn get_user_by_online_id(
-    conn: &mut SqliteConnection,
+    conn: &mut PgConnection,
     oid: &str,
 ) -> Result<Option<models::User>, DbError> {
-    use super::schema::user::dsl::*;
+    use super::schema::users::dsl::*;
 
-    Ok(user
+    Ok(users
         .filter(online_id.eq(oid))
         .first::<models::User>(conn)
         .optional()?)
 }
 
-pub fn insert_new_user(conn: &mut SqliteConnection, oid: &str) -> Result<Uuid, DbError> {
-    use super::schema::user::dsl::*;
+pub fn insert_new_user(conn: &mut PgConnection, oid: &str) -> Result<Uuid, DbError> {
+    use super::schema::users::dsl::*;
 
     let uuid = Uuid::new_v4();
 
-    diesel::insert_into(user)
+    diesel::insert_into(users)
         .values(models::NewUser {
-            id: uuid.to_string(),
+            id: uuid,
             online_id: oid.to_owned(),
         })
         .execute(conn)?;
@@ -45,15 +46,15 @@ pub fn insert_new_user(conn: &mut SqliteConnection, oid: &str) -> Result<Uuid, D
 }
 
 pub fn set_user_psn_id(
-    conn: &mut SqliteConnection,
+    conn: &mut PgConnection,
     uid: Uuid,
     linked_id: Option<u64>,
 ) -> Result<(), DbError> {
-    use super::schema::user::dsl::*;
+    use super::schema::users::dsl::*;
 
-    let linked_id = linked_id.map(wrap_to_i64);
+    let linked_id = linked_id.map(BigDecimal::from);
 
-    diesel::update(user.filter(id.eq(uid.to_string())))
+    diesel::update(users.filter(id.eq(uid)))
         .set(psn_id.eq(linked_id))
         .execute(conn)?;
 
@@ -61,15 +62,15 @@ pub fn set_user_psn_id(
 }
 
 pub fn set_user_rpcn_id(
-    conn: &mut SqliteConnection,
+    conn: &mut PgConnection,
     uid: Uuid,
     linked_id: Option<u64>,
 ) -> Result<(), DbError> {
-    use super::schema::user::dsl::*;
+    use super::schema::users::dsl::*;
 
-    let linked_id = linked_id.map(wrap_to_i64);
+    let linked_id = linked_id.map(BigDecimal::from);
 
-    diesel::update(user.filter(id.eq(uid.to_string())))
+    diesel::update(users.filter(id.eq(uid)))
         .set(rpcn_id.eq(linked_id))
         .execute(conn)?;
 

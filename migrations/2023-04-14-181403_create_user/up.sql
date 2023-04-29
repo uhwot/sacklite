@@ -1,7 +1,7 @@
-CREATE TABLE user (
-    id TEXT PRIMARY KEY NOT NULL,
-    online_id TEXT NOT NULL UNIQUE,
-    psn_id BIGINT UNIQUE,
-    rpcn_id BIGINT UNIQUE,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL
+CREATE TABLE users (
+    id uuid PRIMARY KEY NOT NULL,
+    online_id varchar(16) NOT NULL UNIQUE,
+    psn_id numeric UNIQUE,
+    rpcn_id numeric UNIQUE,
+    created_at timestamp DEFAULT CURRENT_TIMESTAMP NOT NULL
 );
