@@ -4,7 +4,7 @@ use actix_identity::Identity;
 use actix_session::Session;
 use actix_web::{error, web, HttpMessage, HttpRequest, HttpResponse, Responder, Result};
 use bigdecimal::ToPrimitive;
-use log::{debug, warn, error};
+use log::{debug, error, warn};
 use maud::html as xml;
 use thiserror::Error;
 use uuid::Uuid;
@@ -69,7 +69,7 @@ pub async fn login(
             LoginError::DbError(e) => {
                 error!("Database error: {e}");
                 Err(error::ErrorInternalServerError(""))
-            },
+            }
         },
     }?;
 

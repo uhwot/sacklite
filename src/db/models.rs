@@ -1,7 +1,7 @@
 use std::time::SystemTime;
 
 use bigdecimal::BigDecimal;
-use diesel::{prelude::*};
+use diesel::prelude::*;
 use uuid::Uuid;
 
 use super::schema::users;
