@@ -55,14 +55,7 @@ pub async fn parse_session(
     req: dev::ServiceRequest,
     next: Next<impl MessageBody + 'static>,
 ) -> Result<ServiceResponse<EitherBody<impl MessageBody>>, Error> {
-    let config = req.app_data::<Data<Config>>().unwrap();
-
-    let mut path = req.path();
-    if path.starts_with(&config.base_path) {
-        path = &path[config.base_path.len()..]
-    }
-
-    if path == "/login" {
+    if req.path().ends_with("/login") {
         let res = next.call(req).await?;
         return Ok(res.map_into_left_body())
     }
