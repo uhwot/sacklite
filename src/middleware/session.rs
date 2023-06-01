@@ -8,13 +8,13 @@ use actix_session::SessionExt;
 use actix_web::{
     body::{BodySize, EitherBody, MessageBody},
     dev::{self, ServiceResponse},
-    web::{Bytes, Data},
+    web::Bytes,
     Error, HttpResponse,
 };
 use actix_web_lab::middleware::Next;
 use uuid::Uuid;
 
-use crate::types::{SessionData, Platform, GameVersion, Config};
+use crate::types::{SessionData, Platform, GameVersion};
 
 pub async fn session_hack(
     req: dev::ServiceRequest,
