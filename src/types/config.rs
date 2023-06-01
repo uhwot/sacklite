@@ -17,6 +17,7 @@ pub struct Config {
     pub announcement: String,
 
     pub create_user_on_connect: bool,
+    pub rename_users_automatically: bool,
 
     pub verify_client_digest: bool,
     pub verify_npticket_signature: bool,

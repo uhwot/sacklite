@@ -2,7 +2,6 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use actix_session::Session;
 use actix_web::{error, web, HttpResponse, Responder, Result};
-use bigdecimal::ToPrimitive;
 use log::{debug, error, warn};
 use maud::html as xml;
 use thiserror::Error;
@@ -109,23 +108,28 @@ fn get_session_data(
         Err(_) => return Err(LoginError::UserError),
     };
 
-    let user =
-        get_user_by_online_id(&mut conn, &npticket.body.online_id).map_err(LoginError::DbError)?;
+    let user = match npticket.footer.key_id {
+        Platform::Psn => get_user_by_psn_id(&mut conn, npticket.body.user_id),
+        Platform::Rpcn => get_user_by_rpcn_id(&mut conn, npticket.body.user_id),
+    }.map_err(LoginError::DbError)?;
 
     if let Some(user) = user {
-        let linked_id = match npticket.footer.key_id {
-            Platform::Psn => user.psn_id,
-            Platform::Rpcn => user.rpcn_id,
-        }
-        .ok_or(LoginError::UserError)?;
+        if user.online_id != npticket.body.online_id {
+            if !config.rename_users_automatically {
+                return Err(LoginError::UserError);
+            }
 
-        if linked_id.to_u64().unwrap() != npticket.body.user_id {
-            return Err(LoginError::UserError);
+            set_user_online_id(&mut conn, user.id, &npticket.body.online_id).map_err(LoginError::DbError)?;
+
+            match npticket.footer.key_id {
+                Platform::Psn => set_user_rpcn_id(&mut conn, user.id, None),
+                Platform::Rpcn => set_user_psn_id(&mut conn, user.id, None),
+            }.map_err(LoginError::DbError)?;
         }
 
         return Ok((
             user.id,
-            user.online_id,
+            npticket.body.online_id,
             npticket.footer.key_id,
             game_version,
         ));

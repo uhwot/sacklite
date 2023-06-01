@@ -30,6 +30,34 @@ pub fn get_user_by_online_id(
         .optional()?)
 }
 
+pub fn get_user_by_psn_id(
+    conn: &mut PgConnection,
+    linked_id: u64,
+) -> Result<Option<models::User>, DbError> {
+    use super::schema::users::dsl::*;
+
+    let linked_id = BigDecimal::from(linked_id);
+
+    Ok(users
+        .filter(psn_id.eq(linked_id))
+        .first::<models::User>(conn)
+        .optional()?)
+}
+
+pub fn get_user_by_rpcn_id(
+    conn: &mut PgConnection,
+    linked_id: u64,
+) -> Result<Option<models::User>, DbError> {
+    use super::schema::users::dsl::*;
+
+    let linked_id = BigDecimal::from(linked_id);
+
+    Ok(users
+        .filter(rpcn_id.eq(linked_id))
+        .first::<models::User>(conn)
+        .optional()?)
+}
+
 pub fn insert_new_user(conn: &mut PgConnection, oid: &str) -> Result<Uuid, DbError> {
     use super::schema::users::dsl::*;
 
@@ -43,6 +71,20 @@ pub fn insert_new_user(conn: &mut PgConnection, oid: &str) -> Result<Uuid, DbErr
         .execute(conn)?;
 
     Ok(uuid)
+}
+
+pub fn set_user_online_id(
+    conn: &mut PgConnection,
+    uid: Uuid,
+    oid: &str,
+) -> Result<(), DbError> {
+    use super::schema::users::dsl::*;
+
+    diesel::update(users.filter(id.eq(uid)))
+        .set(online_id.eq(oid))
+        .execute(conn)?;
+
+    Ok(())
 }
 
 pub fn set_user_psn_id(
