@@ -1,5 +1,5 @@
 mod digest;
-mod session_hack;
+mod session;
 
 pub use digest::verify_digest;
-pub use session_hack::session_hack;
+pub use session::{session_hack, parse_session};

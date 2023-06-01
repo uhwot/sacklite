@@ -1,4 +1,7 @@
 use actix_web::web;
+use actix_web_lab::middleware::from_fn;
+
+use crate::middleware;
 
 mod auth;
 mod client_config;
@@ -6,11 +9,13 @@ mod enter_level;
 mod message;
 mod news;
 mod tags;
+mod user;
 
 // i would have split this shit up, but actix-web doesn't let me ¯\_(ツ)_/¯
 pub fn cfg(cfg: &mut web::ServiceConfig) {
     cfg.service(
         web::scope("")
+            .wrap(from_fn(middleware::parse_session))
             // login
             .route("/login", web::post().to(auth::login))
             .route("/goodbye", web::post().to(auth::goodbye))
@@ -25,6 +30,8 @@ pub fn cfg(cfg: &mut web::ServiceConfig) {
             )
             // tags
             .route("/tags", web::get().to(tags::tags))
+            // user
+            .route("/user/{online_id}", web::get().to(user::user))
             // news
             .route("/news", web::get().to(news::news))
             // client config

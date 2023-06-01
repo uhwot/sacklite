@@ -1,7 +1,7 @@
 use anyhow::{bail, Result};
-use strum_macros::IntoStaticStr;
+use strum_macros::{IntoStaticStr, EnumString};
 
-#[derive(Debug, IntoStaticStr)]
+#[derive(Debug, IntoStaticStr, EnumString, Clone)]
 pub enum Platform {
     Psn,
     Rpcn,

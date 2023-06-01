@@ -1,6 +1,6 @@
 use anyhow::{bail, Context, Ok, Result};
 use regex::Regex;
-use strum_macros::IntoStaticStr;
+use strum_macros::{IntoStaticStr, EnumString};
 
 // title ids copied from:
 // https://github.com/LBPUnion/ProjectLighthouse/blob/329ab660430820e87879f60f310840b9682eac4f/ProjectLighthouse/Types/Users/GameVersion.cs
@@ -111,7 +111,7 @@ const LBP3_TITLE_IDS: [&str; 27] = [
     "CUSA01304",
 ];
 
-#[derive(Debug, IntoStaticStr)]
+#[derive(Debug, IntoStaticStr, EnumString, Clone)]
 pub enum GameVersion {
     Lbp1,
     Lbp2,
@@ -129,6 +129,14 @@ impl GameVersion {
             _ if LBP2_TITLE_IDS.contains(&title_id) => Ok(Self::Lbp2),
             _ if LBP3_TITLE_IDS.contains(&title_id) => Ok(Self::Lbp3),
             _ => bail!("Title ID doesn't match LBP games"),
+        }
+    }
+    
+    pub fn to_num(&self) -> u8 {
+        match self {
+            Self::Lbp1 => 1,
+            Self::Lbp2 => 2,
+            Self::Lbp3 => 3,
         }
     }
 }

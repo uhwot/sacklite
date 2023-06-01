@@ -9,9 +9,7 @@ edition = "2021"
 actix-web = { version = "4.3", default-features = false, features = ["macros", "compress-gzip"]}
 actix-web-lab = "0.19"
 actix-http = "3.3"
-actix-files = "0.6"
 actix-session = { version = "0.7", features = ["redis-actor-session"] }
-actix-identity = "0.5"
 
 diesel = { version = "2.0", features = ["postgres", "r2d2", "uuid", "numeric"] }
 uuid = { version = "1.3", features = ["v4", "fast-rng", "serde"] }

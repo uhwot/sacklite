@@ -1,4 +1,3 @@
-use actix_identity::IdentityMiddleware;
 use actix_session::{
     config::{CookieContentSecurity, PersistentSession},
     storage::RedisActorSessionStore,
@@ -61,7 +60,6 @@ async fn main() -> std::io::Result<()> {
                         digest_key_present,
                         from_fn(middleware::verify_digest),
                     ))
-                    .wrap(IdentityMiddleware::default())
                     .wrap(
                         SessionMiddleware::builder(
                             RedisActorSessionStore::new(&config.redis_conn),
@@ -70,7 +68,7 @@ async fn main() -> std::io::Result<()> {
                         .cookie_name("MM_AUTH".to_string())
                         .cookie_content_security(CookieContentSecurity::Signed)
                         .session_lifecycle(
-                            PersistentSession::default().session_ttl(Duration::hours(1)),
+                            PersistentSession::default().session_ttl(Duration::minutes(30)),
                         )
                         .build(),
                     )

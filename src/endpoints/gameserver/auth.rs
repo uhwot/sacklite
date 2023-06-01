@@ -1,8 +1,7 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use actix_identity::Identity;
 use actix_session::Session;
-use actix_web::{error, web, HttpMessage, HttpRequest, HttpResponse, Responder, Result};
+use actix_web::{error, web, HttpResponse, Responder, Result};
 use bigdecimal::ToPrimitive;
 use log::{debug, error, warn};
 use maud::html as xml;
@@ -17,7 +16,6 @@ use crate::{
 };
 
 pub async fn login(
-    req: HttpRequest,
     pool: web::Data<DbPool>,
     config: web::Data<Config>,
     pub_key_store: web::Data<PubKeyStore>,
@@ -60,7 +58,7 @@ pub async fn login(
         }
     }
 
-    let user = web::block(move || get_login_user(&pool, npticket, &config)).await?;
+    let user = web::block(move || get_session_data(&pool, npticket, &config)).await?;
 
     let (uuid, online_id, platform, game_version) = match user {
         Ok(user) => Ok(user),
@@ -76,7 +74,7 @@ pub async fn login(
     let platform: &str = platform.into();
     let game_version: &str = game_version.into();
 
-    Identity::login(&req.extensions(), uuid.to_string()).unwrap();
+    session.insert("user_id", uuid.to_string()).unwrap();
     session.insert("online_id", online_id).unwrap();
     session.insert("platform", platform).unwrap();
     session.insert("game_version", game_version).unwrap();
@@ -99,7 +97,7 @@ pub enum LoginError {
     UserError,
 }
 
-fn get_login_user(
+fn get_session_data(
     pool: &web::Data<DbPool>,
     npticket: NpTicket,
     config: &web::Data<Config>,
@@ -153,7 +151,7 @@ fn get_login_user(
     ))
 }
 
-pub async fn goodbye(_: Identity, session: Session) -> impl Responder {
+pub async fn goodbye(session: Session) -> impl Responder {
     session.purge();
     HttpResponse::Ok()
 }
