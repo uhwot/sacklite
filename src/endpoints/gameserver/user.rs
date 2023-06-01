@@ -41,7 +41,7 @@ pub async fn user(path: web::Path<String>, pool: web::Data<DbPool>, session: web
         heartCount { "0" }
         yay2 { "0" }
         boo2 { "0" }
-        biography { "fuck you" }
+        biography { (user.biography) }
         reviewCount { "0" }
         commentCount { "0" }
         photosByMeCount { "0" }

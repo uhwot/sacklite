@@ -7,5 +7,6 @@ diesel::table! {
         psn_id -> Nullable<Numeric>,
         rpcn_id -> Nullable<Numeric>,
         created_at -> Timestamp,
+        biography -> Varchar,
     }
 }

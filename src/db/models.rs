@@ -13,6 +13,7 @@ pub struct User {
     pub psn_id: Option<BigDecimal>,
     pub rpcn_id: Option<BigDecimal>,
     pub created_at: SystemTime,
+    pub biography: String,
 }
 
 #[derive(Insertable)]
