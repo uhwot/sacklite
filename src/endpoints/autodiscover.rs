@@ -11,12 +11,14 @@ struct Autodiscover {
     version: u32,
     server_brand: &'static str,
     url: String,
+    uses_custom_digest_key: bool,
 }
 
-pub async fn autodiscover(data: web::Data<Config>) -> impl Responder {
+pub async fn autodiscover(config: web::Data<Config>) -> impl Responder {
     web::Json(Autodiscover {
-        version: 1,
+        version: 2,
         server_brand: "sacklite",
-        url: data.autodiscover_url.clone(),
+        url: config.autodiscover_url.clone(),
+        uses_custom_digest_key: config.digest_key == "CustomServerDigest",
     })
 }
