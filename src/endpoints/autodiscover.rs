@@ -18,7 +18,7 @@ pub async fn autodiscover(config: web::Data<Config>) -> impl Responder {
     web::Json(Autodiscover {
         version: 2,
         server_brand: "sacklite",
-        url: config.autodiscover_url.clone(),
+        url: config.external_url.clone() + &config.base_path,
         uses_custom_digest_key: config.digest_key == "CustomServerDigest",
     })
 }
