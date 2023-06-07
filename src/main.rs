@@ -6,10 +6,11 @@ use actix_session::{
 use actix_web::{
     cookie::{time::Duration, Key},
     middleware::{Compress, Condition, Logger},
-    web, App, HttpServer,
+    web::{self, PayloadConfig}, App, HttpServer,
 };
 use actix_web_lab::middleware::from_fn;
 
+use actix_xml::XmlConfig;
 use diesel::{r2d2, PgConnection};
 
 use base64::{engine::general_purpose, Engine as _};
@@ -72,7 +73,15 @@ async fn main() -> std::io::Result<()> {
                         )
                         .build(),
                     )
-                    .wrap(from_fn(middleware::session_hack)),
+                    .wrap(from_fn(middleware::session_hack))
+                    .app_data(
+                        XmlConfig::default()
+                            .content_type(|_| {
+                                // needed since content types are inconsistent because of fucking course they are (ノಠ益ಠ)ノ彡┻━┻
+                                true
+                            })
+                    )
+                    .app_data(PayloadConfig::new(config.payload_limit as usize))
             )
             .route(
                 "/autodiscover",

@@ -14,6 +14,15 @@ pub struct User {
     pub rpcn_id: Option<BigDecimal>,
     pub created_at: SystemTime,
     pub biography: String,
+    pub location_x: i32,
+    pub location_y: i32,
+    pub icon: String,
+    pub lbp2_planets: String,
+    pub lbp3_planets: String,
+    pub cross_control_planet: String,
+    pub yay2: String,
+    pub meh2: String,
+    pub boo2: String,
 }
 
 #[derive(Insertable)]

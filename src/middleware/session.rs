@@ -69,8 +69,6 @@ pub async fn parse_session(
         return Ok(ServiceResponse::new(req, res));
     }
 
-    // TODO: check if user exists in database
-
     let platform: String = session.get("platform").unwrap().unwrap();
     let game_version: String = session.get("game_version").unwrap().unwrap();
 

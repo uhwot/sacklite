@@ -1,5 +1,6 @@
 /target
 
+/resrc
 config.yml
 network_settings.nws
 app.db
