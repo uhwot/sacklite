@@ -1,12 +1,12 @@
-use actix_web::{web, Result, Responder, error, HttpResponse};
+use actix_web::{web::{self, Json, Data, ReqData, Path}, Result, Responder, error, HttpResponse};
 use maud::html as xml;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
-use crate::{DbPool, db::actions::{DbError, user::*}, responder::Xml, types::{SessionData, GameVersion}};
+use crate::{DbPool, db::{actions::{DbError, user::*}, models::User}, responder::Xml, types::{SessionData, GameVersion}};
 
 use super::Location;
 
-pub async fn user(path: web::Path<String>, pool: web::Data<DbPool>, session: web::ReqData<SessionData>) -> Result<impl Responder> {
+pub async fn user(path: Path<String>, pool: Data<DbPool>, session: ReqData<SessionData>) -> Result<impl Responder> {
     let online_id = path.into_inner();
 
     let user = web::block(move || {
@@ -49,7 +49,6 @@ pub async fn user(path: web::Path<String>, pool: web::Data<DbPool>, session: web
             }
             crossControlPlanet { (user.cross_control_planet) }
             yay2 { (user.yay2) }
-            meh2 { (user.meh2) }
             boo2 { (user.boo2) }
             biography { (user.biography) }
             reviewCount { "0" }
@@ -64,7 +63,11 @@ pub async fn user(path: web::Path<String>, pool: web::Data<DbPool>, session: web
             favouriteSlotCount { "0" }
             favouriteUserCount { "0" }
             lolcatftwCount { "0" } // this is the queue, why the fuck would you do this mm
-            pins {} // list of nums, ex: 2807907583,1675480291,1252477949
+            pins {
+                // https://stackoverflow.com/a/61052611
+                @let pins: String = user.profile_pins.iter().map(|&pin| pin.to_string() + ",").collect();
+                (pins)
+            }
             staffChallengeGoldCount { "0" }
             staffChallengeSilverCount { "0" }
             staffChallengeBronzeCount { "0" }
@@ -80,8 +83,42 @@ pub async fn user(path: web::Path<String>, pool: web::Data<DbPool>, session: web
 }
 
 #[derive(Deserialize)]
+pub struct UsersQuery {
+    u: Vec<String>,
+}
+
+pub async fn users(query: web::Query<UsersQuery>, pool: Data<DbPool>) -> Result<impl Responder> {
+    let users = web::block(move || {
+        let mut conn = pool.get().unwrap();
+
+        let mut users = Vec::new();
+
+        for oid in &query.u {
+            let user = get_user_by_online_id(&mut conn, &oid)?;
+            if let Some(u) = user {
+                users.push(u);
+            }
+        }
+
+        Ok::<Vec<User>, DbError>(users)
+    })
+    .await?
+    .map_err(error::ErrorInternalServerError)?;
+
+    Ok(Xml(xml!(
+        users {
+            @for user in users {
+                user type="user" {
+                    npHandle icon=(user.icon) { (user.online_id) }
+                }
+            }
+        }
+    ).into_string()))
+}
+
+#[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct UpdateUser {
+pub struct UpdateUserPayload {
     location: Option<Location>,
     biography: Option<String>,
     icon: Option<String>,
@@ -100,7 +137,7 @@ pub struct Slot {
     location: Location,
 }
 
-pub async fn update_user(payload: actix_xml::Xml<UpdateUser>, pool: web::Data<DbPool>, session: web::ReqData<SessionData>) -> Result<impl Responder> {
+pub async fn update_user(payload: actix_xml::Xml<UpdateUserPayload>, pool: Data<DbPool>, session: ReqData<SessionData>) -> Result<impl Responder> {
     web::block(move || {
         let mut conn = pool.get().unwrap();
         let uid = session.user_id;
@@ -140,4 +177,64 @@ pub async fn update_user(payload: actix_xml::Xml<UpdateUser>, pool: web::Data<Db
     .map_err(error::ErrorInternalServerError)?;
 
     Ok(HttpResponse::Ok())
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct UserPinsPayload {
+    progress: Option<Vec<i64>>,
+    awards: Option<Vec<i64>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    profile_pins: Option<Vec<i64>>,
+}
+
+pub async fn get_my_pins(pool: Data<DbPool>, session: ReqData<SessionData>) -> Result<impl Responder> {
+    let user = web::block(move || {
+        let mut conn = pool.get().unwrap();
+
+        get_user_by_online_id(&mut conn, &session.online_id)
+    })
+    .await?
+    .map_err(error::ErrorInternalServerError)?;
+
+    let user = user.ok_or(error::ErrorNotFound(""))?;
+
+    Ok(Json(UserPinsPayload {
+        progress: Some(user.progress),
+        awards: Some(user.awards),
+        // packet captures don't have profile pins in the response
+        profile_pins: None,
+    }))
+}
+
+pub async fn update_my_pins(payload: Json<UserPinsPayload>, pool: Data<DbPool>, session: ReqData<SessionData>) -> Result<impl Responder> {
+    if let Some(pins) = &payload.profile_pins {
+        if pins.len() > 3 {
+            return Err(error::ErrorBadRequest(""));
+        }
+    }
+
+    let mut payload_resp = payload.clone();
+
+    web::block(move || {
+        let mut conn = pool.get().unwrap();
+
+        if let Some(awards) = &payload.awards {
+            set_user_awards(&mut conn, session.user_id, awards)?;
+        }
+        if let Some(progress) = &payload.progress {
+            set_user_progress(&mut conn, session.user_id, progress)?;
+        }
+        if let Some(pins) = &payload.profile_pins {
+            set_user_profile_pins(&mut conn, session.user_id, pins)?;
+        }
+
+        Ok::<(), DbError>(())
+    })
+    .await?
+    .map_err(error::ErrorInternalServerError)?;
+
+    // packet captures don't have profile pins in the response
+    payload_resp.profile_pins = None;
+
+    Ok(Json(payload_resp))
 }

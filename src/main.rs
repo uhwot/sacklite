@@ -6,7 +6,7 @@ use actix_session::{
 use actix_web::{
     cookie::{time::Duration, Key},
     middleware::{Compress, Condition, Logger},
-    web::{self, PayloadConfig}, App, HttpServer,
+    web::{self, Data, PayloadConfig, JsonConfig}, App, HttpServer,
 };
 use actix_web_lab::middleware::from_fn;
 
@@ -51,12 +51,12 @@ async fn main() -> std::io::Result<()> {
 
     HttpServer::new(move || {
         App::new()
-            .app_data(web::Data::new(config.clone()))
-            .app_data(web::Data::new(pool.clone()))
+            .app_data(Data::new(config.clone()))
+            .app_data(Data::new(pool.clone()))
             .service(
                 web::scope(&config.base_path)
                     .configure(endpoints::gameserver::cfg)
-                    .app_data(web::Data::new(types::PubKeyStore::new().unwrap()))
+                    .app_data(Data::new(types::PubKeyStore::new().unwrap()))
                     .wrap(Condition::new(
                         digest_key_present,
                         from_fn(middleware::verify_digest),
@@ -74,12 +74,13 @@ async fn main() -> std::io::Result<()> {
                         .build(),
                     )
                     .wrap(from_fn(middleware::session_hack))
+                    // needed since content types are inconsistent because of fucking course they are (ノಠ益ಠ)ノ彡┻━┻
                     .app_data(
-                        XmlConfig::default()
-                            .content_type(|_| {
-                                // needed since content types are inconsistent because of fucking course they are (ノಠ益ಠ)ノ彡┻━┻
-                                true
-                            })
+                        XmlConfig::default().content_type(|_| { true })
+                    )
+                    // oh my fucking god i hate this
+                    .app_data(
+                        JsonConfig::default().content_type(|_| { true })
                     )
                     .app_data(PayloadConfig::new(config.payload_limit as usize))
             )

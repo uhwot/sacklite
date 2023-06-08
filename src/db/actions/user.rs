@@ -244,3 +244,45 @@ pub fn set_user_boo2(
 
     Ok(())
 }
+
+pub fn set_user_awards(
+    conn: &mut PgConnection,
+    uid: Uuid,
+    awards_vec: &Vec<i64>,
+) -> Result<(), DbError> {
+    use crate::db::schema::users::dsl::*;
+
+    diesel::update(users.filter(id.eq(uid)))
+        .set(awards.eq(awards_vec))
+        .execute(conn)?;
+
+    Ok(())
+}
+
+pub fn set_user_progress(
+    conn: &mut PgConnection,
+    uid: Uuid,
+    progress_vec: &Vec<i64>,
+) -> Result<(), DbError> {
+    use crate::db::schema::users::dsl::*;
+
+    diesel::update(users.filter(id.eq(uid)))
+        .set(progress.eq(progress_vec))
+        .execute(conn)?;
+
+    Ok(())
+}
+
+pub fn set_user_profile_pins(
+    conn: &mut PgConnection,
+    uid: Uuid,
+    pins_vec: &Vec<i64>,
+) -> Result<(), DbError> {
+    use crate::db::schema::users::dsl::*;
+
+    diesel::update(users.filter(id.eq(uid)))
+        .set(profile_pins.eq(pins_vec))
+        .execute(conn)?;
+
+    Ok(())
+}

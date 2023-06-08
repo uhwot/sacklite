@@ -80,7 +80,8 @@ impl NpTicket {
         let mut signature = self.footer.signature.as_slice();
 
         // PSN signatures are fixed-length and might have extra null bytes at the end
-        // so we have to read the length from the SEQUENCE header
+        // so we have to read the length from the TLV data
+        // https://letsencrypt.org/docs/a-warm-welcome-to-asn1-and-der/#type-length-value
         if let Platform::Psn = self.footer.key_id {
             let sig_length = signature
                 .get(1)

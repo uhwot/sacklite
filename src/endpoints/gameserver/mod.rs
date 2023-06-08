@@ -34,7 +34,10 @@ pub fn cfg(cfg: &mut web::ServiceConfig) {
             .route("/tags", web::get().to(tags::tags))
             // user
             .route("/user/{online_id}", web::get().to(user::user))
+            .route("/users", web::get().to(user::users))
             .route("/updateUser", web::post().to(user::update_user))
+            .route("/get_my_pins", web::get().to(user::get_my_pins))
+            .route("/update_my_pins", web::post().to(user::update_my_pins))
             // resource
             .route("/r/{hash}", web::get().to(resource::download))
             .route("/upload/{hash}", web::post().to(resource::upload))

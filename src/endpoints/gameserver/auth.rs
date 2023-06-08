@@ -1,7 +1,7 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use actix_session::Session;
-use actix_web::{error, web, HttpResponse, Responder, Result};
+use actix_web::{error, web::{self, Data, Bytes}, HttpResponse, Responder, Result};
 use log::{debug, error};
 use maud::html as xml;
 use thiserror::Error;
@@ -14,10 +14,10 @@ use crate::{
 };
 
 pub async fn login(
-    pool: web::Data<DbPool>,
-    config: web::Data<Config>,
-    pub_key_store: web::Data<PubKeyStore>,
-    payload: web::Bytes,
+    pool: Data<DbPool>,
+    config: Data<Config>,
+    pub_key_store: Data<PubKeyStore>,
+    payload: Bytes,
     session: Session,
 ) -> Result<impl Responder> {
     let npticket = NpTicket::parse_from_bytes(payload).map_err(|e| {
@@ -96,9 +96,9 @@ pub enum LoginError {
 }
 
 fn get_session_data(
-    pool: &web::Data<DbPool>,
+    pool: &Data<DbPool>,
     npticket: NpTicket,
-    config: &web::Data<Config>,
+    config: &Data<Config>,
 ) -> std::result::Result<SessionData, LoginError> {
     let mut conn = pool.get().expect("Couldn't get db connection from pool");
 

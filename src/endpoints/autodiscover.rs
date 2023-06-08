@@ -1,5 +1,5 @@
 use crate::types::Config;
-use actix_web::{web, Responder};
+use actix_web::{web::{Data, Json}, Responder};
 use serde::Serialize;
 
 // docs:
@@ -14,8 +14,8 @@ struct Autodiscover {
     uses_custom_digest_key: bool,
 }
 
-pub async fn autodiscover(config: web::Data<Config>) -> impl Responder {
-    web::Json(Autodiscover {
+pub async fn autodiscover(config: Data<Config>) -> impl Responder {
+    Json(Autodiscover {
         version: 2,
         server_brand: "sacklite",
         url: config.external_url.clone() + &config.base_path,

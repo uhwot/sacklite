@@ -1,6 +1,6 @@
 use std::fs;
 
-use actix_web::{error, web, HttpResponse, Responder, Result};
+use actix_web::{error, web::{Data, Path, Bytes}, HttpResponse, Responder, Result};
 use log::{debug, error};
 use maud::html as xml;
 use serde::Deserialize;
@@ -8,7 +8,7 @@ use sha1::{Sha1, Digest};
 
 use crate::{types::Config, utils::resource::{check_sha1, get_res_path}, responder::Xml};
 
-pub async fn download(path: web::Path<String>, config: web::Data<Config>) -> Result<impl Responder> {
+pub async fn download(path: Path<String>, config: Data<Config>) -> Result<impl Responder> {
     let mut hash = path.into_inner();
     hash.make_ascii_lowercase();
 
@@ -31,7 +31,7 @@ pub async fn download(path: web::Path<String>, config: web::Data<Config>) -> Res
     )
 }
 
-pub async fn upload(payload: web::Bytes, path: web::Path<String>, config: web::Data<Config>) -> Result<impl Responder> {
+pub async fn upload(payload: Bytes, path: Path<String>, config: Data<Config>) -> Result<impl Responder> {
     let hash = path.into_inner();
 
     let mut hasher = Sha1::new();
@@ -69,7 +69,7 @@ pub struct ResourceList {
     resource: Vec<String>,
 }
 
-pub async fn filter_resources(payload: actix_xml::Xml<ResourceList>, config: web::Data<Config>) -> Result<impl Responder> {{
+pub async fn filter_resources(payload: actix_xml::Xml<ResourceList>, config: Data<Config>) -> Result<impl Responder> {{
     Ok(Xml(xml!(
         resources {
             @for hash in &payload.resource {

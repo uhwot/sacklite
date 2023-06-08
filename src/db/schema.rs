@@ -17,5 +17,8 @@ diesel::table! {
         yay2 -> Varchar,
         meh2 -> Varchar,
         boo2 -> Varchar,
+        awards -> Array<Int8>,
+        progress -> Array<Int8>,
+        profile_pins -> Array<Int8>,
     }
 }

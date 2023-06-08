@@ -23,6 +23,9 @@ pub struct User {
     pub yay2: String,
     pub meh2: String,
     pub boo2: String,
+    pub awards: Vec<i64>,
+    pub progress: Vec<i64>,
+    pub profile_pins: Vec<i64>,
 }
 
 #[derive(Insertable)]
