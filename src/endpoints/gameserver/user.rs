@@ -183,7 +183,8 @@ pub async fn update_user(payload: actix_xml::Xml<UpdateUserPayload>, pool: Data<
 pub struct UserPinsPayload {
     progress: Option<Vec<i64>>,
     awards: Option<Vec<i64>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    // packet captures don't have profile pins in responses
+    #[serde(skip_serializing)]
     profile_pins: Option<Vec<i64>>,
 }
 
@@ -191,17 +192,16 @@ pub async fn get_my_pins(pool: Data<DbPool>, session: ReqData<SessionData>) -> R
     let user = web::block(move || {
         let mut conn = pool.get().unwrap();
 
-        get_user_by_online_id(&mut conn, &session.online_id)
+        get_user_by_uuid(&mut conn, session.user_id)
     })
     .await?
     .map_err(error::ErrorInternalServerError)?;
 
-    let user = user.ok_or(error::ErrorNotFound(""))?;
+    let user = user.ok_or(error::ErrorInternalServerError(""))?;
 
     Ok(Json(UserPinsPayload {
         progress: Some(user.progress),
         awards: Some(user.awards),
-        // packet captures don't have profile pins in the response
         profile_pins: None,
     }))
 }
