@@ -2,58 +2,58 @@ use bigdecimal::BigDecimal;
 use diesel::prelude::*;
 use uuid::Uuid;
 
-use crate::db::models;
+use crate::db::models::{User, NewUser};
 use super::DbError;
 
 pub fn get_user_by_uuid(
     conn: &mut PgConnection,
     uuid: Uuid,
-) -> Result<Option<models::User>, DbError> {
+) -> Result<Option<User>, DbError> {
     use crate::db::schema::users::dsl::*;
 
     Ok(users
         .filter(id.eq(uuid))
-        .first::<models::User>(conn)
+        .first::<User>(conn)
         .optional()?)
 }
 
 pub fn get_user_by_online_id(
     conn: &mut PgConnection,
     oid: &str,
-) -> Result<Option<models::User>, DbError> {
+) -> Result<Option<User>, DbError> {
     use crate::db::schema::users::dsl::*;
 
     Ok(users
         .filter(online_id.eq(oid))
-        .first::<models::User>(conn)
+        .first::<User>(conn)
         .optional()?)
 }
 
 pub fn get_user_by_psn_id(
     conn: &mut PgConnection,
     linked_id: u64,
-) -> Result<Option<models::User>, DbError> {
+) -> Result<Option<User>, DbError> {
     use crate::db::schema::users::dsl::*;
 
     let linked_id = BigDecimal::from(linked_id);
 
     Ok(users
         .filter(psn_id.eq(linked_id))
-        .first::<models::User>(conn)
+        .first::<User>(conn)
         .optional()?)
 }
 
 pub fn get_user_by_rpcn_id(
     conn: &mut PgConnection,
     linked_id: u64,
-) -> Result<Option<models::User>, DbError> {
+) -> Result<Option<User>, DbError> {
     use crate::db::schema::users::dsl::*;
 
     let linked_id = BigDecimal::from(linked_id);
 
     Ok(users
         .filter(rpcn_id.eq(linked_id))
-        .first::<models::User>(conn)
+        .first::<User>(conn)
         .optional()?)
 }
 
@@ -63,7 +63,7 @@ pub fn insert_new_user(conn: &mut PgConnection, oid: &str) -> Result<Uuid, DbErr
     let uuid = Uuid::new_v4();
 
     diesel::insert_into(users)
-        .values(models::NewUser {
+        .values(NewUser {
             id: uuid,
             online_id: oid.to_owned(),
         })

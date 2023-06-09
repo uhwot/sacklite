@@ -1,22 +1,24 @@
 use actix_web::{web::{self, Json, Data, ReqData, Path}, Result, Responder, error, HttpResponse};
+use anyhow::Context;
 use maud::html as xml;
 use serde::{Deserialize, Serialize};
 
-use crate::{DbPool, db::{actions::{DbError, user::*}, models::User}, responder::Xml, types::{SessionData, GameVersion}};
+use crate::{DbPool, db::{actions::{DbError, user::*, comment::get_user_comment_count}, models::User}, responder::Xml, types::{SessionData, GameVersion}};
 
 use super::Location;
 
 pub async fn user(path: Path<String>, pool: Data<DbPool>, session: ReqData<SessionData>) -> Result<impl Responder> {
     let online_id = path.into_inner();
 
-    let user = web::block(move || {
+    let (user, comment_count) = web::block(move || {
         let mut conn = pool.get().unwrap();
-        get_user_by_online_id(&mut conn, &online_id)
+        
+        let user = get_user_by_online_id(&mut conn, &online_id)?.context("User not found")?;
+        let comment_count = get_user_comment_count(&mut conn, user.id)?;
+        Ok::<(User, i64), DbError>((user, comment_count))
     })
     .await?
     .map_err(error::ErrorInternalServerError)?;
-
-    let user = user.ok_or(error::ErrorNotFound(""))?;
 
     Ok(Xml(xml!(
         user type="user" {
@@ -52,7 +54,7 @@ pub async fn user(path: Path<String>, pool: Data<DbPool>, session: ReqData<Sessi
             boo2 { (user.boo2) }
             biography { (user.biography) }
             reviewCount { "0" }
-            commentCount { "0" }
+            commentCount { (comment_count) }
             photosByMeCount { "0" }
             photosWithMeCount { "0" }
             commentsEnabled { "true" }

@@ -1,6 +1,18 @@
 // @generated automatically by Diesel CLI.
 
 diesel::table! {
+    comments (id) {
+        id -> Int8,
+        author -> Uuid,
+        posted_at -> Timestamp,
+        target_user -> Nullable<Uuid>,
+        content -> Varchar,
+        deleted_by -> Nullable<Uuid>,
+        deleted_by_mod -> Bool,
+    }
+}
+
+diesel::table! {
     users (id) {
         id -> Uuid,
         online_id -> Varchar,
@@ -22,3 +34,8 @@ diesel::table! {
         profile_pins -> Array<Int8>,
     }
 }
+
+diesel::allow_tables_to_appear_in_same_query!(
+    comments,
+    users,
+);
