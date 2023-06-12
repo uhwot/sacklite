@@ -8,7 +8,7 @@ use serde_json::json;
 pub async fn autodiscover(config: Data<Config>) -> impl Responder {
     Json(json!({
         "version": 2,
-        "server_brand": "sacklite",
+        "serverBrand": "sacklite",
         "url": config.external_url.clone() + &config.base_path,
         "usesCustomDigestKey": config.digest_key == "CustomServerDigest",
     }))
