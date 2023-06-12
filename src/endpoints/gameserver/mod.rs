@@ -8,7 +8,6 @@ mod auth;
 mod client_config;
 mod enter_level;
 mod message;
-mod news;
 mod tags;
 mod user;
 mod resource;
@@ -51,8 +50,6 @@ pub fn cfg(cfg: &mut web::ServiceConfig) {
             .route("/deleteUserComment/{online_id}", web::post().to(comment::delete_user_comment))
             // publish
             .route("/startPublish", web::get().to(publish::start_publish))
-            // news
-            .route("/news", web::get().to(news::news))
             // client config
             .route(
                 "/network_settings.nws",
