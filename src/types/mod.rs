@@ -11,3 +11,5 @@ pub use npticket::NpTicket;
 pub use platform::Platform;
 pub use pub_key_store::PubKeyStore;
 pub use session_data::SessionData;
+
+pub use game_version::gamever_to_num;

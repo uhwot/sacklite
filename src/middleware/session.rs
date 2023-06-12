@@ -16,6 +16,8 @@ use uuid::Uuid;
 
 use crate::types::{SessionData, Platform, GameVersion};
 
+// TODO: refactor without using actix-session
+
 pub async fn session_hack(
     req: dev::ServiceRequest,
     next: Next<impl MessageBody + 'static>,

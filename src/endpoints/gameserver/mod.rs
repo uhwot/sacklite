@@ -13,6 +13,7 @@ mod tags;
 mod user;
 mod resource;
 mod comment;
+mod publish;
 
 // i would have split this shit up, but actix-web doesn't let me ¯\_(ツ)_/¯
 pub fn cfg(cfg: &mut web::ServiceConfig) {
@@ -48,6 +49,8 @@ pub fn cfg(cfg: &mut web::ServiceConfig) {
             .route("/userComments/{online_id}", web::get().to(comment::user_comments))
             .route("/postUserComment/{online_id}", web::post().to(comment::post_user_comment))
             .route("/deleteUserComment/{online_id}", web::post().to(comment::delete_user_comment))
+            // publish
+            .route("/startPublish", web::get().to(publish::start_publish))
             // news
             .route("/news", web::get().to(news::news))
             // client config

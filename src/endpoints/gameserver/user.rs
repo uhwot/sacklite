@@ -3,7 +3,7 @@ use anyhow::Context;
 use maud::html as xml;
 use serde::{Deserialize, Serialize};
 
-use crate::{DbPool, db::{actions::{DbError, user::*, comment::get_user_comment_count}, models::User}, responder::Xml, types::{SessionData, GameVersion}};
+use crate::{DbPool, db::{actions::{DbError, user::*, comment::get_user_comment_count}, models::User}, responder::Xml, types::{SessionData, GameVersion, Config, gamever_to_num}, utils::resource::res_exists};
 
 use super::Location;
 
@@ -23,7 +23,7 @@ pub async fn user(path: Path<String>, pool: Data<DbPool>, session: ReqData<Sessi
     Ok(Xml(xml!(
         user type="user" {
             npHandle icon=(user.icon) { (user.online_id) }
-            game { (session.game_version.to_num()) }
+            game { (gamever_to_num(&session.game_version)) }
             lbp1UsedSlots { "0" }
             entitledSlots { "20" }
             freeSlots { "20" }
@@ -139,7 +139,26 @@ pub struct Slot {
     location: Location,
 }
 
-pub async fn update_user(payload: actix_xml::Xml<UpdateUserPayload>, pool: Data<DbPool>, session: ReqData<SessionData>) -> Result<impl Responder> {
+pub async fn update_user(payload: actix_xml::Xml<UpdateUserPayload>, pool: Data<DbPool>, session: ReqData<SessionData>, config: Data<Config>) -> Result<impl Responder> {
+    if let Some(icon) = &payload.icon {
+        if !res_exists(&config.resource_dir, &icon, false, true) {
+            return Err(error::ErrorBadRequest(""));
+        }
+    }
+    for resource_ref in [
+        &payload.planets,
+        &payload.cross_control_planet,
+        &payload.yay2,
+        &payload.meh2,
+        &payload.boo2,
+    ] {
+        if let Some(res_ref) = resource_ref {
+            if !res_exists(&config.resource_dir, &res_ref, false, false) {
+                return Err(error::ErrorBadRequest(""));
+            }
+        }
+    }
+
     web::block(move || {
         let mut conn = pool.get().unwrap();
         let uid = session.user_id;

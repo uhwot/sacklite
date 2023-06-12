@@ -9,8 +9,7 @@ use sha1::{Sha1, Digest};
 use crate::{types::Config, utils::resource::{check_sha1, get_res_path}, responder::Xml};
 
 pub async fn download(path: Path<String>, config: Data<Config>) -> Result<impl Responder> {
-    let mut hash = path.into_inner();
-    hash.make_ascii_lowercase();
+    let hash = path.into_inner();
 
     if !check_sha1(&hash) {
         debug!("Resource SHA1 hash is invalid: {hash}");
@@ -73,8 +72,7 @@ pub async fn filter_resources(payload: actix_xml::Xml<ResourceList>, config: Dat
     Ok(Xml(xml!(
         resources {
             @for hash in &payload.resource {
-                @let hash = hash.to_ascii_lowercase();
-                @if !check_sha1(&hash) || !get_res_path(&config.resource_dir, &hash).exists() {
+                @if check_sha1(&hash) && !get_res_path(&config.resource_dir, &hash).exists() {
                     resource { (hash) }
                 }
             }

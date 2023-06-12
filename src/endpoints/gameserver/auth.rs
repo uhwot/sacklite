@@ -134,6 +134,8 @@ fn get_session_data(
         });
     }
 
+    // TODO: check if user with the same online id exists
+
     if !config.create_user_on_connect {
         return Err(LoginError::UserError);
     }

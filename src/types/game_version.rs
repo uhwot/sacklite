@@ -111,11 +111,11 @@ const LBP3_TITLE_IDS: [&str; 27] = [
     "CUSA01304",
 ];
 
-#[derive(Debug, IntoStaticStr, EnumString, Clone)]
+#[derive(Debug, IntoStaticStr, EnumString, Copy, Clone)]
 pub enum GameVersion {
-    Lbp1,
-    Lbp2,
-    Lbp3,
+    Lbp1 = 1,
+    Lbp2 = 2,
+    Lbp3 = 3,
 }
 
 impl GameVersion {
@@ -131,12 +131,8 @@ impl GameVersion {
             _ => bail!("Title ID doesn't match LBP games"),
         }
     }
-    
-    pub fn to_num(&self) -> u8 {
-        match self {
-            Self::Lbp1 => 1,
-            Self::Lbp2 => 2,
-            Self::Lbp3 => 3,
-        }
-    }
+}
+
+pub fn gamever_to_num(gamever: &GameVersion) -> u8 {
+    *gamever as u8
 }
