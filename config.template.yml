@@ -1,0 +1,29 @@
+digest_key: "CustomServerDigest"
+listen_addr: "127.0.0.1"
+listen_port: 10060
+external_url: "http://localhost:10060"
+base_path: "/lbp"
+db_conn: "postgres://postgres@localhost/sacklite"
+redis_conn: "127.0.0.1:6379"
+log_level: "info"
+
+eula: |
+  some legalese or something idk
+announcement: |
+  I've come to make an announcement,
+  Shadow the Hedgehog is a b-
+
+resource_dir: "./resrc"
+payload_limit: 1000000
+
+create_user_on_connect: true
+rename_users_automatically: true
+
+verify_client_digest: true
+verify_npticket_signature: true
+verify_npticket_expiry: true
+
+# run this once, then copy the key generated from console and paste it here
+# i should prob change this tbh
+session_secret_key: !binary |
+  
