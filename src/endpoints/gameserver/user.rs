@@ -1,24 +1,30 @@
+use std::sync::Arc;
+
 use actix_web::{web::{self, Json, Data, ReqData, Path}, Result, Responder, error, HttpResponse};
-use anyhow::Context;
 use maud::html as xml;
 use serde::{Deserialize, Serialize};
+use sqlx::{Pool, Postgres};
+use futures::TryStreamExt;
 
-use crate::{DbPool, db::{actions::{DbError, user::*, comment::get_user_comment_count}, models::User}, responder::Xml, types::{SessionData, GameVersion, Config, gamever_to_num}, utils::resource::res_exists};
+use crate::{responder::Xml, types::{SessionData, GameVersion, Config, gamever_to_num}, utils::resource::res_exists};
 
 use super::Location;
 
-pub async fn user(path: Path<String>, pool: Data<DbPool>, session: ReqData<SessionData>) -> Result<impl Responder> {
+pub async fn user(path: Path<String>, pool: Data<Arc<Pool<Postgres>>>, session: ReqData<SessionData>) -> Result<impl Responder> {
     let online_id = path.into_inner();
 
-    let (user, comment_count) = web::block(move || {
-        let mut conn = pool.get().unwrap();
-        
-        let user = get_user_by_online_id(&mut conn, &online_id)?.context("User not found")?;
-        let comment_count = get_user_comment_count(&mut conn, user.id)?;
-        Ok::<(User, i64), DbError>((user, comment_count))
-    })
-    .await?
-    .map_err(error::ErrorInternalServerError)?;
+    // https://stackoverflow.com/a/26727307
+    let user = sqlx::query!(
+        "SELECT users.*, COUNT(comments.id) AS comment_count
+        FROM users LEFT JOIN comments ON users.id = comments.target_user
+        WHERE online_id = $1
+        GROUP BY users.id",
+        online_id
+    )
+    .fetch_optional(&***pool)
+    .await
+    .map_err(error::ErrorInternalServerError)?
+    .ok_or(error::ErrorNotFound("User not found"))?;
 
     Ok(Xml(xml!(
         user type="user" {
@@ -54,7 +60,7 @@ pub async fn user(path: Path<String>, pool: Data<DbPool>, session: ReqData<Sessi
             boo2 { (user.boo2) }
             biography { (user.biography) }
             reviewCount { "0" }
-            commentCount { (comment_count) }
+            commentCount { (user.comment_count.unwrap_or(0)) }
             photosByMeCount { "0" }
             photosWithMeCount { "0" }
             commentsEnabled { "true" }
@@ -68,7 +74,7 @@ pub async fn user(path: Path<String>, pool: Data<DbPool>, session: ReqData<Sessi
             pins {
                 // https://stackoverflow.com/a/61052611
                 @let pins: String = user.profile_pins.iter().map(|&pin| pin.to_string() + ",").collect();
-                (pins)
+                (pins[..pins.len() - 1])
             }
             staffChallengeGoldCount { "0" }
             staffChallengeSilverCount { "0" }
@@ -89,27 +95,15 @@ pub struct UsersQuery {
     u: Vec<String>,
 }
 
-pub async fn users(query: web::Query<UsersQuery>, pool: Data<DbPool>) -> Result<impl Responder> {
-    let users = web::block(move || {
-        let mut conn = pool.get().unwrap();
-
-        let mut users = Vec::new();
-
-        for oid in &query.u {
-            let user = get_user_by_online_id(&mut conn, &oid)?;
-            if let Some(u) = user {
-                users.push(u);
-            }
-        }
-
-        Ok::<Vec<User>, DbError>(users)
-    })
-    .await?
-    .map_err(error::ErrorInternalServerError)?;
+pub async fn users(query: web::Query<UsersQuery>, pool: Data<Arc<Pool<Postgres>>>) -> Result<impl Responder> {
+    let mut users = sqlx::query!(
+        "SELECT online_id, icon FROM users WHERE online_id = ANY($1)", &query.u[..]
+    )
+    .fetch(&***pool);
 
     Ok(Xml(xml!(
         users {
-            @for user in users {
+            @while let Some(user) = users.try_next().await.map_err(error::ErrorInternalServerError)? {
                 user type="user" {
                     npHandle icon=(user.icon) { (user.online_id) }
                 }
@@ -139,10 +133,10 @@ pub struct Slot {
     location: Location,
 }
 
-pub async fn update_user(payload: actix_xml::Xml<UpdateUserPayload>, pool: Data<DbPool>, session: ReqData<SessionData>, config: Data<Config>) -> Result<impl Responder> {
+pub async fn update_user(payload: actix_xml::Xml<UpdateUserPayload>, pool: Data<Arc<Pool<Postgres>>>, session: ReqData<SessionData>, config: Data<Config>) -> Result<impl Responder> {
     if let Some(icon) = &payload.icon {
         if !res_exists(&config.resource_dir, &icon, false, true) {
-            return Err(error::ErrorBadRequest(""));
+            return Err(error::ErrorBadRequest("Icon resource invalid"));
         }
     }
     for resource_ref in [
@@ -154,48 +148,79 @@ pub async fn update_user(payload: actix_xml::Xml<UpdateUserPayload>, pool: Data<
     ] {
         if let Some(res_ref) = resource_ref {
             if !res_exists(&config.resource_dir, &res_ref, false, false) {
-                return Err(error::ErrorBadRequest(""));
+                return Err(error::ErrorBadRequest("Resource(s) invalid"));
             }
         }
     }
 
-    web::block(move || {
-        let mut conn = pool.get().unwrap();
-        let uid = session.user_id;
+    let uid = session.user_id;
 
-        if let Some(location) = &payload.location {
-            set_user_location(&mut conn, uid, location.x, location.y)?;
+    if let Some(location) = &payload.location {
+        sqlx::query!(
+            "UPDATE users SET location_x = $1, location_y = $2 WHERE id = $3",
+            location.x as i32, location.y as i32, uid
+        )
+        .execute(&***pool)
+        .await
+        .map_err(error::ErrorInternalServerError)?;
+    }
+    if let Some(bio) = &payload.biography {
+        sqlx::query!("UPDATE users SET biography = $1 WHERE id = $2", bio, uid)
+            .execute(&***pool)
+            .await
+            .map_err(error::ErrorInternalServerError)?;
+    }
+    if let Some(icon) = &payload.icon {
+        sqlx::query!("UPDATE users SET icon = $1 WHERE id = $2", icon, uid)
+            .execute(&***pool)
+            .await
+            .map_err(error::ErrorInternalServerError)?;
+    }
+    if let Some(planets) = &payload.planets {
+        match session.game_version {
+            GameVersion::Lbp1 => {},
+            GameVersion::Lbp2 => {
+                sqlx::query!(
+                    "UPDATE users SET lbp2_planets = $1 WHERE id = $2", planets, uid
+                )
+                .execute(&***pool)
+                .await
+                .map_err(error::ErrorInternalServerError)?;
+            },
+            GameVersion::Lbp3 => {
+                sqlx::query!(
+                    "UPDATE users SET lbp3_planets = $1 WHERE id = $2", planets, uid
+                )
+                .execute(&***pool)
+                .await
+                .map_err(error::ErrorInternalServerError)?;
+            },
         }
-        if let Some(bio) = &payload.biography {
-            set_user_biography(&mut conn, uid, bio)?;
-        }
-        if let Some(icon) = &payload.icon {
-            set_user_icon(&mut conn, uid, icon)?;
-        }
-        if let Some(planets) = &payload.planets {
-            match session.game_version {
-                GameVersion::Lbp1 => {},
-                GameVersion::Lbp2 => set_user_lbp2_planets(&mut conn, uid, planets)?,
-                GameVersion::Lbp3 => set_user_lbp3_planets(&mut conn, uid, planets)?,
-            }
-        }
-        if let Some(ccplanet) = &payload.cross_control_planet {
-            set_user_ccplanet(&mut conn, uid, ccplanet)?;
-        }
-        if let Some(yay2) = &payload.yay2 {
-            set_user_yay2(&mut conn, uid, yay2)?;
-        }
-        if let Some(meh2) = &payload.meh2 {
-            set_user_meh2(&mut conn, uid, meh2)?;
-        }
-        if let Some(boo2) = &payload.boo2 {
-            set_user_boo2(&mut conn, uid, boo2)?;
-        }
-
-        Ok::<(), DbError>(())
-    })
-    .await?
-    .map_err(error::ErrorInternalServerError)?;
+    }
+    if let Some(ccplanet) = &payload.cross_control_planet {
+        sqlx::query!("UPDATE users SET cross_control_planet = $1 WHERE id = $2", ccplanet, session.user_id)
+            .execute(&***pool)
+            .await
+            .map_err(error::ErrorInternalServerError)?;
+    }
+    if let Some(yay2) = &payload.yay2 {
+        sqlx::query!("UPDATE users SET yay2 = $1 WHERE id = $2", yay2, session.user_id)
+            .execute(&***pool)
+            .await
+            .map_err(error::ErrorInternalServerError)?;
+    }
+    if let Some(meh2) = &payload.meh2 {
+        sqlx::query!("UPDATE users SET meh2 = $1 WHERE id = $2", meh2, session.user_id)
+            .execute(&***pool)
+            .await
+            .map_err(error::ErrorInternalServerError)?;
+    }
+    if let Some(boo2) = &payload.boo2 {
+        sqlx::query!("UPDATE users SET boo2 = $1 WHERE id = $2", boo2, session.user_id)
+            .execute(&***pool)
+            .await
+            .map_err(error::ErrorInternalServerError)?;
+    }
 
     Ok(HttpResponse::Ok())
 }
@@ -209,16 +234,14 @@ pub struct UserPinsPayload {
     profile_pins: Option<Vec<i64>>,
 }
 
-pub async fn get_my_pins(pool: Data<DbPool>, session: ReqData<SessionData>) -> Result<impl Responder> {
-    let user = web::block(move || {
-        let mut conn = pool.get().unwrap();
-
-        get_user_by_uuid(&mut conn, session.user_id)
-    })
-    .await?
-    .map_err(error::ErrorInternalServerError)?;
-
-    let user = user.ok_or(error::ErrorInternalServerError(""))?;
+pub async fn get_my_pins(pool: Data<Arc<Pool<Postgres>>>, session: ReqData<SessionData>) -> Result<impl Responder> {
+    let user = sqlx::query!(
+        "SELECT progress, awards FROM users WHERE id = $1", session.user_id
+    )
+    .fetch_optional(&***pool)
+    .await
+    .map_err(error::ErrorInternalServerError)?
+    .ok_or(error::ErrorNotFound("User not found"))?;
 
     Ok(Json(UserPinsPayload {
         progress: Some(user.progress),
@@ -227,35 +250,34 @@ pub async fn get_my_pins(pool: Data<DbPool>, session: ReqData<SessionData>) -> R
     }))
 }
 
-pub async fn update_my_pins(payload: Json<UserPinsPayload>, pool: Data<DbPool>, session: ReqData<SessionData>) -> Result<impl Responder> {
+pub async fn update_my_pins(mut payload: Json<UserPinsPayload>, pool: Data<Arc<Pool<Postgres>>>, session: ReqData<SessionData>) -> Result<impl Responder> {
     if let Some(pins) = &payload.profile_pins {
         if pins.len() > 3 {
-            return Err(error::ErrorBadRequest(""));
+            return Err(error::ErrorBadRequest("Invalid profile pins list"));
         }
     }
 
-    let mut payload_resp = payload.clone();
-
-    web::block(move || {
-        let mut conn = pool.get().unwrap();
-
-        if let Some(awards) = &payload.awards {
-            set_user_awards(&mut conn, session.user_id, awards)?;
-        }
-        if let Some(progress) = &payload.progress {
-            set_user_progress(&mut conn, session.user_id, progress)?;
-        }
-        if let Some(pins) = &payload.profile_pins {
-            set_user_profile_pins(&mut conn, session.user_id, pins)?;
-        }
-
-        Ok::<(), DbError>(())
-    })
-    .await?
-    .map_err(error::ErrorInternalServerError)?;
+    if let Some(awards) = &payload.awards {
+        sqlx::query!("UPDATE users SET awards = $1 WHERE id = $2", awards, session.user_id)
+            .execute(&***pool)
+            .await
+            .map_err(error::ErrorInternalServerError)?;
+    }
+    if let Some(progress) = &payload.progress {
+        sqlx::query!("UPDATE users SET progress = $1 WHERE id = $2", progress, session.user_id)
+            .execute(&***pool)
+            .await
+            .map_err(error::ErrorInternalServerError)?;
+    }
+    if let Some(pins) = &payload.profile_pins {
+        sqlx::query!("UPDATE users SET profile_pins = $1 WHERE id = $2", pins, session.user_id)
+            .execute(&***pool)
+            .await
+            .map_err(error::ErrorInternalServerError)?;
+    }
 
     // packet captures don't have profile pins in the response
-    payload_resp.profile_pins = None;
+    payload.profile_pins = None;
 
-    Ok(Json(payload_resp))
+    Ok(Json(payload))
 }

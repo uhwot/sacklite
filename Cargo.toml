@@ -3,7 +3,8 @@ name = "sacklite"
 version = "0.1.0"
 edition = "2021"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[profile.dev.package.sqlx-macros]
+opt-level = 3
 
 [dependencies]
 actix-web = { version = "4.3", default-features = false, features = ["macros", "compress-gzip"]}
@@ -13,9 +14,10 @@ actix-session = { version = "0.7", features = ["redis-actor-session"] }
 actix-xml = { git = "https://github.com/uhwot/actix-xml.git", rev = "0d9ce91a", default-features = false }
 mime = "0.3"
 
-diesel = { version = "2.0", features = ["postgres", "r2d2", "uuid", "numeric"] }
+sqlx = { version = "0.7", features = ["runtime-tokio", "tls-rustls", "postgres", "macros", "migrate", "uuid", "chrono", "bigdecimal"] }
 uuid = { version = "1.3", features = ["v4", "fast-rng", "serde"] }
-bigdecimal = "0.3"
+
+futures = "0.3"
 
 # yes, i'm using an html template engine for xml :P
 maud = "0.25"
@@ -33,12 +35,11 @@ openssl = "0.10"
 hex-literal = "0.4"
 base64 = "0.21"
 
-strum = "0.24"
-strum_macros = "0.24"
+strum = "0.25"
+strum_macros = "0.25"
 
 byteorder = "1.4"
 
 anyhow = "1.0"
-thiserror = "1.0"
 
 regex = "1.8"

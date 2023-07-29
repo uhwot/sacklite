@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use actix_session::{
     config::{CookieContentSecurity, PersistentSession},
     storage::RedisActorSessionStore,
@@ -11,20 +13,18 @@ use actix_web::{
 use actix_web_lab::middleware::from_fn;
 
 use actix_xml::XmlConfig;
-use diesel::{r2d2, PgConnection};
+
+use sqlx::postgres::PgPoolOptions;
 
 use base64::{engine::general_purpose, Engine as _};
 use env_logger::Builder;
 use log::{info, warn};
 
-mod db;
 mod endpoints;
 mod middleware;
 mod responder;
 mod types;
 mod utils;
-
-type DbPool = r2d2::Pool<r2d2::ConnectionManager<PgConnection>>;
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
@@ -44,15 +44,15 @@ async fn main() -> std::io::Result<()> {
 
     let session_key = parse_session_key(&config.session_secret_key);
 
-    let manager = r2d2::ConnectionManager::<PgConnection>::new(&config.db_conn);
-    let pool = r2d2::Pool::builder()
-        .build(manager)
-        .expect("database URL should be valid Postgres connection url");
+    let pool = PgPoolOptions::new()
+        .connect(&config.db_conn)
+        .await
+        .expect("Couldn't init database connection pool");
 
     HttpServer::new(move || {
         App::new()
             .app_data(Data::new(config.clone()))
-            .app_data(Data::new(pool.clone()))
+            .app_data(Data::new(Arc::new(pool.clone())))
             .service(
                 web::scope(&config.base_path)
                     .configure(endpoints::gameserver::cfg)

@@ -128,7 +128,7 @@ impl GameVersion {
             _ if LBP1_TITLE_IDS.contains(&title_id) => Ok(Self::Lbp1),
             _ if LBP2_TITLE_IDS.contains(&title_id) => Ok(Self::Lbp2),
             _ if LBP3_TITLE_IDS.contains(&title_id) => Ok(Self::Lbp3),
-            _ => bail!("Title ID doesn't match LBP games"),
+            _ => bail!("Invalid title ID"),
         }
     }
 }

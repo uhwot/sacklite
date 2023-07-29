@@ -1,20 +1,19 @@
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::{time::{SystemTime, UNIX_EPOCH}, sync::Arc};
 
 use actix_session::Session;
-use actix_web::{error, web::{self, Data, Bytes}, HttpResponse, Responder, Result};
-use log::{debug, error};
+use actix_web::{error, web::{Data, Bytes}, HttpResponse, Responder, Result};
+use log::debug;
 use maud::html as xml;
-use thiserror::Error;
+use sqlx::{Pool, Postgres, types::BigDecimal};
+use uuid::Uuid;
 
 use crate::{
-    db::actions::{DbError, user::*},
     responder::Xml,
     types::{Config, GameVersion, NpTicket, Platform, PubKeyStore, SessionData},
-    DbPool,
 };
 
 pub async fn login(
-    pool: Data<DbPool>,
+    pool: Data<Arc<Pool<Postgres>>>,
     config: Data<Config>,
     pub_key_store: Data<PubKeyStore>,
     payload: Bytes,
@@ -56,18 +55,7 @@ pub async fn login(
         }
     }
 
-    let session_data = web::block(move || get_session_data(&pool, npticket, &config)).await?;
-
-    let session_data = match session_data {
-        Ok(d) => Ok(d),
-        Err(e) => match e {
-            LoginError::UserError => Err(error::ErrorUnauthorized("")),
-            LoginError::DbError(e) => {
-                error!("Database error: {e}");
-                Err(error::ErrorInternalServerError(""))
-            }
-        },
-    }?;
+    let session_data = get_session_data(pool, npticket, &config).await?;
 
     let platform: &str = session_data.platform.into();
     let game_version: &str = session_data.game_version.into();
@@ -87,43 +75,53 @@ pub async fn login(
     .into_string()))
 }
 
-#[derive(Error, Debug)]
-pub enum LoginError {
-    #[error("database error")]
-    DbError(#[from] DbError),
-    #[error("user error")]
-    UserError,
+struct UserData {
+    id: Uuid,
+    online_id: String,
 }
 
-fn get_session_data(
-    pool: &Data<DbPool>,
+async fn get_session_data(
+    pool: Data<Arc<Pool<Postgres>>>,
     npticket: NpTicket,
     config: &Data<Config>,
-) -> std::result::Result<SessionData, LoginError> {
-    let mut conn = pool.get().expect("Couldn't get db connection from pool");
+) -> Result<SessionData> {
+    let game_version = GameVersion::from_service_id(&npticket.body.service_id)
+        .map_err(error::ErrorBadRequest)?;
 
-    let game_version = match GameVersion::from_service_id(&npticket.body.service_id) {
-        Ok(ver) => ver,
-        Err(_) => return Err(LoginError::UserError),
-    };
+    let npticket_uid = BigDecimal::from(npticket.body.user_id);
 
     let user = match npticket.footer.key_id {
-        Platform::Psn => get_user_by_psn_id(&mut conn, npticket.body.user_id),
-        Platform::Rpcn => get_user_by_rpcn_id(&mut conn, npticket.body.user_id),
-    }.map_err(LoginError::DbError)?;
+        Platform::Psn =>
+            sqlx::query_as!(UserData, "SELECT id, online_id FROM users WHERE psn_id = $1", npticket_uid)
+                .fetch_optional(&***pool)
+                .await,
+        Platform::Rpcn =>
+            sqlx::query_as!(UserData, "SELECT id, online_id FROM users WHERE rpcn_id = $1", npticket_uid)
+                .fetch_optional(&***pool)
+                .await,
+    }.map_err(error::ErrorInternalServerError)?;
 
     if let Some(user) = user {
         if user.online_id != npticket.body.online_id {
             if !config.rename_users_automatically {
-                return Err(LoginError::UserError);
+                return Err(error::ErrorUnauthorized("Online ID doesn't match with user on server"));
             }
 
-            set_user_online_id(&mut conn, user.id, &npticket.body.online_id).map_err(LoginError::DbError)?;
+            sqlx::query!("UPDATE users SET online_id = $1 WHERE id = $2", npticket.body.online_id, user.id)
+                .execute(&***pool)
+                .await
+                .map_err(error::ErrorInternalServerError)?;
 
             match npticket.footer.key_id {
-                Platform::Psn => set_user_rpcn_id(&mut conn, user.id, None),
-                Platform::Rpcn => set_user_psn_id(&mut conn, user.id, None),
-            }.map_err(LoginError::DbError)?;
+                Platform::Psn =>
+                    sqlx::query!("UPDATE users SET rpcn_id = NULL WHERE id = $1", user.id)
+                        .execute(&***pool)
+                        .await,
+                Platform::Rpcn =>
+                    sqlx::query!("UPDATE users SET psn_id = NULL WHERE id = $1", user.id)
+                        .execute(&***pool)
+                        .await,
+            }.map_err(error::ErrorInternalServerError)?;
         }
 
         return Ok(SessionData {
@@ -137,16 +135,25 @@ fn get_session_data(
     // TODO: check if user with the same online id exists
 
     if !config.create_user_on_connect {
-        return Err(LoginError::UserError);
+        return Err(error::ErrorUnauthorized("User doesn't exist"));
     }
 
-    let user_id = insert_new_user(&mut conn, &npticket.body.online_id).map_err(LoginError::DbError)?;
+    let user_id = sqlx::query!("INSERT INTO users (id, online_id) VALUES (gen_random_uuid(), $1) RETURNING id", npticket.body.online_id)
+        .fetch_one(&***pool)
+        .await
+        .map_err(error::ErrorInternalServerError)?
+        .id;
+
     match npticket.footer.key_id {
-        Platform::Psn => set_user_psn_id(&mut conn, user_id, Some(npticket.body.user_id))
-            .map_err(LoginError::DbError)?,
-        Platform::Rpcn => set_user_rpcn_id(&mut conn, user_id, Some(npticket.body.user_id))
-            .map_err(LoginError::DbError)?,
-    };
+        Platform::Psn =>
+            sqlx::query!("UPDATE users SET psn_id = $1 WHERE id = $2", npticket_uid, user_id)
+                .execute(&***pool)
+                .await,
+        Platform::Rpcn =>
+            sqlx::query!("UPDATE users SET rpcn_id = $1 WHERE id = $2", npticket_uid, user_id)
+                .execute(&***pool)
+                .await,
+    }.map_err(error::ErrorInternalServerError)?;
 
     Ok(SessionData {
         user_id,
