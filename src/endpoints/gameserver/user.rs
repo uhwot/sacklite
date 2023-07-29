@@ -135,7 +135,7 @@ pub struct Slot {
 
 pub async fn update_user(payload: actix_xml::Xml<UpdateUserPayload>, pool: Data<Arc<Pool<Postgres>>>, session: ReqData<SessionData>, config: Data<Config>) -> Result<impl Responder> {
     if let Some(icon) = &payload.icon {
-        if !res_exists(&config.resource_dir, &icon, false, true) {
+        if !res_exists(&config.resource_dir, &icon, false, false) {
             return Err(error::ErrorBadRequest("Icon resource invalid"));
         }
     }
@@ -147,7 +147,7 @@ pub async fn update_user(payload: actix_xml::Xml<UpdateUserPayload>, pool: Data<
         &payload.boo2,
     ] {
         if let Some(res_ref) = resource_ref {
-            if !res_exists(&config.resource_dir, &res_ref, false, false) {
+            if !res_exists(&config.resource_dir, &res_ref, false, true) {
                 return Err(error::ErrorBadRequest("Resource(s) invalid"));
             }
         }

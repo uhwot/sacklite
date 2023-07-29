@@ -12,7 +12,7 @@ pub fn get_res_path(resource_dir: &str, hash: &str) -> PathBuf {
 
 pub fn res_exists(resource_dir: &str, res_ref: &str, required: bool, is_hash: bool) -> bool {
     if !required && (res_ref.is_empty() || res_ref == "0") { return true; }
-    if is_hash && res_ref.starts_with("g") {
+    if !is_hash && res_ref.starts_with("g") {
         match res_ref[1..].parse::<u32>() {
             Ok(_) => return true,
             Err(_) => return false,
