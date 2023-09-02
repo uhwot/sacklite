@@ -1,81 +1,97 @@
 use std::fs;
 
-use actix_web::{error, web::{Data, Path, Bytes}, HttpResponse, Responder, Result};
-use log::{debug, error};
+use actix_web::{
+    error,
+    web::{Bytes, Data, Path},
+    HttpResponse, Responder, Result,
+};
+use log::debug;
 use maud::html as xml;
 use serde::Deserialize;
-use sha1::{Sha1, Digest};
+use serde_with::{serde_as, DisplayFromStr};
+use sha1::{Digest, Sha1};
 
-use crate::{types::Config, utils::resource::{check_sha1, get_res_path}, responder::Xml};
+use crate::{
+    responder::Xml,
+    types::{Config, ResourceRef},
+    utils::resource::{get_hash_path, str_to_hash},
+};
 
 pub async fn download(path: Path<String>, config: Data<Config>) -> Result<impl Responder> {
     let hash = path.into_inner();
+    let hash = str_to_hash(&hash).map_err(|_| {
+        error::ErrorBadRequest(format!("Resource SHA1 hash is invalid: {hash}"))
+    })?;
 
-    if !check_sha1(&hash) {
-        debug!("Resource SHA1 hash is invalid: {hash}");
-        return Err(error::ErrorBadRequest(""))
-    };
-
-    let path = get_res_path(&config.resource_dir, &hash);
+    let path = get_hash_path(&config.resource_dir, hash);
 
     let file = fs::read(path).map_err(|e| {
         debug!("Couldn't read resource file: {e}");
         error::ErrorNotFound("")
     })?;
 
-    Ok(
-        HttpResponse::Ok()
-            .content_type(mime::APPLICATION_OCTET_STREAM)
-            .body(file)
-    )
+    Ok(HttpResponse::Ok()
+        .content_type(mime::APPLICATION_OCTET_STREAM)
+        .body(file))
 }
 
-pub async fn upload(payload: Bytes, path: Path<String>, config: Data<Config>) -> Result<impl Responder> {
+pub async fn upload(
+    payload: Bytes,
+    path: Path<String>,
+    config: Data<Config>,
+) -> Result<impl Responder> {
     let hash = path.into_inner();
+    let hash = str_to_hash(&hash).map_err(|_| {
+        error::ErrorBadRequest(format!("Resource SHA1 hash is invalid: {hash}"))
+    })?;
 
     let mut hasher = Sha1::new();
     hasher.update(&payload);
 
-    if hash != format!("{:x}", hasher.finalize()) {
-        debug!("Actual resource hash doesn't match hash in request");
-        return Err(error::ErrorBadRequest(""));
+    if hash != hasher.finalize()[..] {
+        return Err(error::ErrorBadRequest("Actual resource hash doesn't match hash in request"));
     }
 
     // TODO: add more checks n shit
-    
-    let path = get_res_path(&config.resource_dir, &hash);
+
+    let path = get_hash_path(&config.resource_dir, hash);
 
     if path.exists() {
-        debug!("Resource is already uploaded");
-        return Err(error::ErrorConflict(""));
+        return Err(error::ErrorConflict("Resource is already uploaded"));
     }
 
     fs::create_dir_all(&config.resource_dir).map_err(|e| {
-        error!("Couldn't create resource dir: {e}");
-        error::ErrorInternalServerError("")
+        error::ErrorInternalServerError(format!("Couldn't create resource dir: {e}"))
     })?;
     fs::write(path, &payload).map_err(|e| {
-        error!("Couldn't write to resource file: {e}");
-        error::ErrorInternalServerError("")
+        error::ErrorInternalServerError(format!("Couldn't write to resource file: {e}"))
     })?;
 
     Ok(HttpResponse::Ok())
 }
 
+#[serde_as]
 #[derive(Deserialize)]
 pub struct ResourceList {
     #[serde(default)]
-    resource: Vec<String>,
+    #[serde_as(as = "Vec<DisplayFromStr>")]
+    resource: Vec<ResourceRef>,
 }
 
-pub async fn filter_resources(payload: actix_xml::Xml<ResourceList>, config: Data<Config>) -> Result<impl Responder> {{
-    Ok(Xml(xml!(
-        resources {
-            @for hash in &payload.resource {
-                @if check_sha1(&hash) && !get_res_path(&config.resource_dir, &hash).exists() {
-                    resource { (hash) }
+pub async fn filter_resources(
+    payload: actix_xml::Xml<ResourceList>,
+    config: Data<Config>,
+) -> Result<impl Responder> {
+    {
+        Ok(Xml(xml!(
+            resources {
+                @for resource in &payload.resource {
+                    @if !resource.exists(&config.resource_dir) {
+                        resource { (resource.to_string()) }
+                    }
                 }
             }
-        }
-    ).into_string()))
-}}
+        )
+        .into_string()))
+    }
+}

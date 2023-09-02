@@ -1,6 +1,6 @@
-use anyhow::{bail, Context, Ok, Result};
+use anyhow::{bail, Context};
 use regex::Regex;
-use strum_macros::{IntoStaticStr, EnumString};
+use std::convert::TryFrom;
 
 // title ids copied from:
 // https://github.com/LBPUnion/ProjectLighthouse/blob/329ab660430820e87879f60f310840b9682eac4f/ProjectLighthouse/Types/Users/GameVersion.cs
@@ -111,28 +111,38 @@ const LBP3_TITLE_IDS: [&str; 27] = [
     "CUSA01304",
 ];
 
-#[derive(Debug, IntoStaticStr, EnumString, Copy, Clone)]
+#[derive(Debug, Copy, Clone)]
 pub enum GameVersion {
-    Lbp1 = 1,
-    Lbp2 = 2,
-    Lbp3 = 3,
+    Lbp1,
+    Lbp2,
+    Lbp3,
 }
 
 impl GameVersion {
-    pub fn from_service_id(service_id: &str) -> Result<Self> {
+    pub fn from_service_id(service_id: &str) -> anyhow::Result<Self> {
         let re = Regex::new(r"^[A-Z]{2}\d{4}-([A-Z]{4}\d{5})_00$").unwrap();
         let captures = re.captures(service_id).context("No title ID match found")?;
         let title_id = &captures[1];
 
         match title_id {
-            _ if LBP1_TITLE_IDS.contains(&title_id) => Ok(Self::Lbp1),
-            _ if LBP2_TITLE_IDS.contains(&title_id) => Ok(Self::Lbp2),
-            _ if LBP3_TITLE_IDS.contains(&title_id) => Ok(Self::Lbp3),
+            _ if LBP1_TITLE_IDS.contains(&title_id) => anyhow::Ok(Self::Lbp1),
+            _ if LBP2_TITLE_IDS.contains(&title_id) => anyhow::Ok(Self::Lbp2),
+            _ if LBP3_TITLE_IDS.contains(&title_id) => anyhow::Ok(Self::Lbp3),
             _ => bail!("Invalid title ID"),
         }
     }
 }
 
-pub fn gamever_to_num(gamever: &GameVersion) -> u8 {
-    *gamever as u8
+// https://stackoverflow.com/a/57578431
+impl TryFrom<u8> for GameVersion {
+    type Error = ();
+
+    fn try_from(v: u8) -> Result<Self, Self::Error> {
+        match v {
+            x if x == GameVersion::Lbp1 as u8 => Ok(GameVersion::Lbp1),
+            x if x == GameVersion::Lbp2 as u8 => Ok(GameVersion::Lbp2),
+            x if x == GameVersion::Lbp3 as u8 => Ok(GameVersion::Lbp3),
+            _ => Err(()),
+        }
+    }
 }

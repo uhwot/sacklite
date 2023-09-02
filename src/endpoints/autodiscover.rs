@@ -1,5 +1,8 @@
 use crate::types::Config;
-use actix_web::{web::{Data, Json}, Responder};
+use actix_web::{
+    web::{Data, Json},
+    Responder,
+};
 use serde_json::json;
 
 // docs:

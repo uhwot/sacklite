@@ -8,7 +8,8 @@ use actix_session::{
 use actix_web::{
     cookie::{time::Duration, Key},
     middleware::{Compress, Condition, Logger},
-    web::{self, Data, PayloadConfig, JsonConfig}, App, HttpServer,
+    web::{self, Data, JsonConfig, PayloadConfig},
+    App, HttpServer,
 };
 use actix_web_lab::middleware::from_fn;
 
@@ -75,14 +76,10 @@ async fn main() -> std::io::Result<()> {
                     )
                     .wrap(from_fn(middleware::session_hack))
                     // needed since content types are inconsistent because of fucking course they are (ノಠ益ಠ)ノ彡┻━┻
-                    .app_data(
-                        XmlConfig::default().content_type(|_| { true })
-                    )
+                    .app_data(XmlConfig::default().content_type(|_| true))
                     // oh my fucking god i hate this
-                    .app_data(
-                        JsonConfig::default().content_type(|_| { true })
-                    )
-                    .app_data(PayloadConfig::new(config.payload_limit as usize))
+                    .app_data(JsonConfig::default().content_type(|_| true))
+                    .app_data(PayloadConfig::new(config.payload_limit as usize)),
             )
             .route(
                 "/autodiscover",

@@ -1,16 +1,28 @@
 use std::sync::Arc;
 
-use actix_web::{web::{self, Json, Data, ReqData, Path}, Result, Responder, error, HttpResponse};
+use actix_web::{
+    error,
+    web::{self, Data, Json, Path, ReqData},
+    HttpResponse, Responder, Result,
+};
+use futures::TryStreamExt;
 use maud::html as xml;
 use serde::{Deserialize, Serialize};
+use serde_with::{serde_as, DefaultOnError, DisplayFromStr};
 use sqlx::{Pool, Postgres};
-use futures::TryStreamExt;
 
-use crate::{responder::Xml, types::{SessionData, GameVersion, Config, gamever_to_num}, utils::resource::res_exists};
+use crate::{
+    responder::Xml,
+    types::{Config, GameVersion, SessionData, ResourceRef}, utils::resource::get_hash_path,
+};
 
 use super::Location;
 
-pub async fn user(path: Path<String>, pool: Data<Arc<Pool<Postgres>>>, session: ReqData<SessionData>) -> Result<impl Responder> {
+pub async fn user(
+    path: Path<String>,
+    pool: Data<Arc<Pool<Postgres>>>,
+    session: ReqData<SessionData>,
+) -> Result<impl Responder> {
     let online_id = path.into_inner();
 
     // https://stackoverflow.com/a/26727307
@@ -29,7 +41,7 @@ pub async fn user(path: Path<String>, pool: Data<Arc<Pool<Postgres>>>, session: 
     Ok(Xml(xml!(
         user type="user" {
             npHandle icon=(user.icon) { (user.online_id) }
-            game { (gamever_to_num(&session.game_version)) }
+            game { (&(session.game_version as u8)) }
             lbp1UsedSlots { "0" }
             entitledSlots { "20" }
             freeSlots { "20" }
@@ -95,9 +107,13 @@ pub struct UsersQuery {
     u: Vec<String>,
 }
 
-pub async fn users(query: web::Query<UsersQuery>, pool: Data<Arc<Pool<Postgres>>>) -> Result<impl Responder> {
+pub async fn users(
+    query: web::Query<UsersQuery>,
+    pool: Data<Arc<Pool<Postgres>>>,
+) -> Result<impl Responder> {
     let mut users = sqlx::query!(
-        "SELECT online_id, icon FROM users WHERE online_id = ANY($1)", &query.u[..]
+        "SELECT online_id, icon FROM users WHERE online_id = ANY($1)",
+        &query.u
     )
     .fetch(&***pool);
 
@@ -112,18 +128,31 @@ pub async fn users(query: web::Query<UsersQuery>, pool: Data<Arc<Pool<Postgres>>
     ).into_string()))
 }
 
+#[serde_as]
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateUserPayload {
     location: Option<Location>,
     biography: Option<String>,
-    icon: Option<String>,
-    planets: Option<String>,
-    cross_control_planet: Option<String>,
+    #[serde(default)]
+    #[serde_as(as = "Option<DefaultOnError<Option<DisplayFromStr>>>")]
+    icon: Option<Option<ResourceRef>>,
+    #[serde(default)]
+    #[serde_as(as = "Option<DefaultOnError<Option<serde_with::hex::Hex>>>")]
+    planets: Option<Option<[u8; 20]>>,
+    #[serde(default)]
+    #[serde_as(as = "Option<DefaultOnError<Option<serde_with::hex::Hex>>>")]
+    cross_control_planet: Option<Option<[u8; 20]>>,
     slots: Option<Vec<Slot>>,
-    yay2: Option<String>,
-    meh2: Option<String>,
-    boo2: Option<String>,
+    #[serde(default)]
+    #[serde_as(as = "Option<DefaultOnError<Option<serde_with::hex::Hex>>>")]
+    yay2: Option<Option<[u8; 20]>>,
+    #[serde(default)]
+    #[serde_as(as = "Option<DefaultOnError<Option<serde_with::hex::Hex>>>")]
+    meh2: Option<Option<[u8; 20]>>,
+    #[serde(default)]
+    #[serde_as(as = "Option<DefaultOnError<Option<serde_with::hex::Hex>>>")]
+    boo2: Option<Option<[u8; 20]>>,
 }
 
 #[derive(Deserialize)]
@@ -133,23 +162,26 @@ pub struct Slot {
     location: Location,
 }
 
-pub async fn update_user(payload: actix_xml::Xml<UpdateUserPayload>, pool: Data<Arc<Pool<Postgres>>>, session: ReqData<SessionData>, config: Data<Config>) -> Result<impl Responder> {
-    if let Some(icon) = &payload.icon {
-        if !res_exists(&config.resource_dir, &icon, false, false) {
+pub async fn update_user(
+    payload: actix_xml::Xml<UpdateUserPayload>,
+    pool: Data<Arc<Pool<Postgres>>>,
+    session: ReqData<SessionData>,
+    config: Data<Config>,
+) -> Result<impl Responder> {
+    if let Some(Some(icon)) = &payload.icon {
+        if !icon.exists(&config.resource_dir) {
             return Err(error::ErrorBadRequest("Icon resource invalid"));
         }
     }
-    for resource_ref in [
+    for hash in [
         &payload.planets,
         &payload.cross_control_planet,
         &payload.yay2,
         &payload.meh2,
         &payload.boo2,
-    ] {
-        if let Some(res_ref) = resource_ref {
-            if !res_exists(&config.resource_dir, &res_ref, false, true) {
-                return Err(error::ErrorBadRequest("Resource(s) invalid"));
-            }
+    ].into_iter().flatten().flatten() {
+        if get_hash_path(&config.resource_dir, *hash).exists() {
+            return Err(error::ErrorBadRequest("Resource(s) invalid"));
         }
     }
 
@@ -158,7 +190,9 @@ pub async fn update_user(payload: actix_xml::Xml<UpdateUserPayload>, pool: Data<
     if let Some(location) = &payload.location {
         sqlx::query!(
             "UPDATE users SET location_x = $1, location_y = $2 WHERE id = $3",
-            location.x as i32, location.y as i32, uid
+            location.x as i32,
+            location.y as i32,
+            uid
         )
         .execute(&***pool)
         .await
@@ -171,55 +205,76 @@ pub async fn update_user(payload: actix_xml::Xml<UpdateUserPayload>, pool: Data<
             .map_err(error::ErrorInternalServerError)?;
     }
     if let Some(icon) = &payload.icon {
-        sqlx::query!("UPDATE users SET icon = $1 WHERE id = $2", icon, uid)
+        sqlx::query!("UPDATE users SET icon = $1 WHERE id = $2", icon.as_ref().map(|r| r.to_string()), uid)
             .execute(&***pool)
             .await
             .map_err(error::ErrorInternalServerError)?;
     }
     if let Some(planets) = &payload.planets {
+        let planets = planets.map(hex::encode);
         match session.game_version {
-            GameVersion::Lbp1 => {},
+            GameVersion::Lbp1 => {}
             GameVersion::Lbp2 => {
                 sqlx::query!(
-                    "UPDATE users SET lbp2_planets = $1 WHERE id = $2", planets, uid
+                    "UPDATE users SET lbp2_planets = $1 WHERE id = $2",
+                    planets,
+                    uid
                 )
                 .execute(&***pool)
                 .await
                 .map_err(error::ErrorInternalServerError)?;
-            },
+            }
             GameVersion::Lbp3 => {
                 sqlx::query!(
-                    "UPDATE users SET lbp3_planets = $1 WHERE id = $2", planets, uid
+                    "UPDATE users SET lbp3_planets = $1 WHERE id = $2",
+                    planets,
+                    uid
                 )
                 .execute(&***pool)
                 .await
                 .map_err(error::ErrorInternalServerError)?;
-            },
+            }
         }
     }
     if let Some(ccplanet) = &payload.cross_control_planet {
-        sqlx::query!("UPDATE users SET cross_control_planet = $1 WHERE id = $2", ccplanet, session.user_id)
-            .execute(&***pool)
-            .await
-            .map_err(error::ErrorInternalServerError)?;
+        sqlx::query!(
+            "UPDATE users SET cross_control_planet = $1 WHERE id = $2",
+            ccplanet.map(|r| hex::encode(r)),
+            session.user_id
+        )
+        .execute(&***pool)
+        .await
+        .map_err(error::ErrorInternalServerError)?;
     }
     if let Some(yay2) = &payload.yay2 {
-        sqlx::query!("UPDATE users SET yay2 = $1 WHERE id = $2", yay2, session.user_id)
-            .execute(&***pool)
-            .await
-            .map_err(error::ErrorInternalServerError)?;
+        sqlx::query!(
+            "UPDATE users SET yay2 = $1 WHERE id = $2",
+            yay2.map(|r| hex::encode(r)),
+            session.user_id
+        )
+        .execute(&***pool)
+        .await
+        .map_err(error::ErrorInternalServerError)?;
     }
     if let Some(meh2) = &payload.meh2 {
-        sqlx::query!("UPDATE users SET meh2 = $1 WHERE id = $2", meh2, session.user_id)
-            .execute(&***pool)
-            .await
-            .map_err(error::ErrorInternalServerError)?;
+        sqlx::query!(
+            "UPDATE users SET meh2 = $1 WHERE id = $2",
+            meh2.map(|r| hex::encode(r)),
+            session.user_id
+        )
+        .execute(&***pool)
+        .await
+        .map_err(error::ErrorInternalServerError)?;
     }
     if let Some(boo2) = &payload.boo2 {
-        sqlx::query!("UPDATE users SET boo2 = $1 WHERE id = $2", boo2, session.user_id)
-            .execute(&***pool)
-            .await
-            .map_err(error::ErrorInternalServerError)?;
+        sqlx::query!(
+            "UPDATE users SET boo2 = $1 WHERE id = $2",
+            boo2.map(|r| hex::encode(r)),
+            session.user_id
+        )
+        .execute(&***pool)
+        .await
+        .map_err(error::ErrorInternalServerError)?;
     }
 
     Ok(HttpResponse::Ok())
@@ -234,9 +289,13 @@ pub struct UserPinsPayload {
     profile_pins: Option<Vec<i64>>,
 }
 
-pub async fn get_my_pins(pool: Data<Arc<Pool<Postgres>>>, session: ReqData<SessionData>) -> Result<impl Responder> {
+pub async fn get_my_pins(
+    pool: Data<Arc<Pool<Postgres>>>,
+    session: ReqData<SessionData>,
+) -> Result<impl Responder> {
     let user = sqlx::query!(
-        "SELECT progress, awards FROM users WHERE id = $1", session.user_id
+        "SELECT progress, awards FROM users WHERE id = $1",
+        session.user_id
     )
     .fetch_optional(&***pool)
     .await
@@ -250,7 +309,11 @@ pub async fn get_my_pins(pool: Data<Arc<Pool<Postgres>>>, session: ReqData<Sessi
     }))
 }
 
-pub async fn update_my_pins(mut payload: Json<UserPinsPayload>, pool: Data<Arc<Pool<Postgres>>>, session: ReqData<SessionData>) -> Result<impl Responder> {
+pub async fn update_my_pins(
+    mut payload: Json<UserPinsPayload>,
+    pool: Data<Arc<Pool<Postgres>>>,
+    session: ReqData<SessionData>,
+) -> Result<impl Responder> {
     if let Some(pins) = &payload.profile_pins {
         if pins.len() > 3 {
             return Err(error::ErrorBadRequest("Invalid profile pins list"));
@@ -258,22 +321,34 @@ pub async fn update_my_pins(mut payload: Json<UserPinsPayload>, pool: Data<Arc<P
     }
 
     if let Some(awards) = &payload.awards {
-        sqlx::query!("UPDATE users SET awards = $1 WHERE id = $2", awards, session.user_id)
-            .execute(&***pool)
-            .await
-            .map_err(error::ErrorInternalServerError)?;
+        sqlx::query!(
+            "UPDATE users SET awards = $1 WHERE id = $2",
+            awards,
+            session.user_id
+        )
+        .execute(&***pool)
+        .await
+        .map_err(error::ErrorInternalServerError)?;
     }
     if let Some(progress) = &payload.progress {
-        sqlx::query!("UPDATE users SET progress = $1 WHERE id = $2", progress, session.user_id)
-            .execute(&***pool)
-            .await
-            .map_err(error::ErrorInternalServerError)?;
+        sqlx::query!(
+            "UPDATE users SET progress = $1 WHERE id = $2",
+            progress,
+            session.user_id
+        )
+        .execute(&***pool)
+        .await
+        .map_err(error::ErrorInternalServerError)?;
     }
     if let Some(pins) = &payload.profile_pins {
-        sqlx::query!("UPDATE users SET profile_pins = $1 WHERE id = $2", pins, session.user_id)
-            .execute(&***pool)
-            .await
-            .map_err(error::ErrorInternalServerError)?;
+        sqlx::query!(
+            "UPDATE users SET profile_pins = $1 WHERE id = $2",
+            pins,
+            session.user_id
+        )
+        .execute(&***pool)
+        .await
+        .map_err(error::ErrorInternalServerError)?;
     }
 
     // packet captures don't have profile pins in the response

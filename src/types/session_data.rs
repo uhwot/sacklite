@@ -1,6 +1,6 @@
 use uuid::Uuid;
 
-use super::{Platform, GameVersion};
+use super::{GameVersion, Platform};
 
 #[derive(Clone)]
 pub struct SessionData {

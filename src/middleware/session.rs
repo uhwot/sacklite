@@ -1,9 +1,4 @@
-use std::str::FromStr;
-
-use actix_http::{
-    header::SET_COOKIE,
-    StatusCode, HttpMessage,
-};
+use actix_http::{header::SET_COOKIE, HttpMessage, StatusCode};
 use actix_session::SessionExt;
 use actix_web::{
     body::{BodySize, EitherBody, MessageBody},
@@ -14,7 +9,7 @@ use actix_web::{
 use actix_web_lab::middleware::Next;
 use uuid::Uuid;
 
-use crate::types::{SessionData, Platform, GameVersion};
+use crate::types::SessionData;
 
 // TODO: refactor without using actix-session
 
@@ -59,26 +54,26 @@ pub async fn parse_session(
 ) -> Result<ServiceResponse<EitherBody<impl MessageBody>>, Error> {
     if req.path().ends_with("/login") {
         let res = next.call(req).await?;
-        return Ok(res.map_into_left_body())
+        return Ok(res.map_into_left_body());
     }
 
     let session = req.get_session();
-    
+
     let user_id: Option<String> = session.get("user_id").unwrap();
-    if let None = user_id {
+    if user_id.is_none() {
         let (req, _pl) = req.into_parts();
         let res = HttpResponse::new(StatusCode::FORBIDDEN).map_into_right_body();
         return Ok(ServiceResponse::new(req, res));
     }
 
-    let platform: String = session.get("platform").unwrap().unwrap();
-    let game_version: String = session.get("game_version").unwrap().unwrap();
+    let platform: u8 = session.get("platform").unwrap().unwrap();
+    let game_version: u8 = session.get("game_version").unwrap().unwrap();
 
     let session_data = SessionData {
         user_id: Uuid::parse_str(&user_id.unwrap()).unwrap(),
         online_id: session.get("online_id").unwrap().unwrap(),
-        platform: Platform::from_str(&platform).unwrap(),
-        game_version: GameVersion::from_str(&game_version).unwrap(),
+        platform: platform.try_into().unwrap(),
+        game_version: game_version.try_into().unwrap(),
     };
 
     req.extensions_mut().insert(session_data);

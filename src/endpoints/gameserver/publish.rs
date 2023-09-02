@@ -1,71 +1,133 @@
-use actix_web::{web::Data, Result, Responder, error, HttpResponse};
+use std::sync::Arc;
+
+use actix_web::{
+    error,
+    web::{Data, ReqData},
+    HttpResponse, Responder, Result,
+};
 use maud::html as xml;
 use serde::Deserialize;
-use serde_inline_default::serde_inline_default;
+use serde_with::{serde_as, BoolFromInt, DefaultOnError, DisplayFromStr};
+use sqlx::{Pool, Postgres};
 
-use crate::{types::Config, responder::Xml, utils::{resource::{check_sha1, get_res_path, res_exists}, deserialize}};
+use crate::{
+    responder::Xml,
+    types::{Config, SessionData, ResourceRef},
+};
 
 use super::Location;
 
-#[serde_inline_default]
+#[serde_as]
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[allow(non_snake_case)]
 pub struct SlotPublishPayload {
     name: String,
     description: String,
-    icon: String,
-    root_level: String,
+    #[serde_as(as = "DefaultOnError<Option<DisplayFromStr>>")]
+    icon: Option<ResourceRef>,
+    #[serde_as(as = "serde_with::hex::Hex")]
+    root_level: [u8; 20],
     #[serde(default)]
-    resource: Vec<String>,
+    #[serde_as(as = "Vec<DisplayFromStr>")]
+    resource: Vec<ResourceRef>,
     location: Location,
     initially_locked: bool,
-    #[serde_inline_default(false)]
+    #[serde(default)]
     is_sub_level: bool,
-    #[allow(non_snake_case)]
-    #[serde_inline_default(false)]
+    #[serde(default)]
     isLBP1Only: bool,
-    #[serde(deserialize_with = "deserialize::bool_from_int")]
+    #[serde_as(as = "BoolFromInt")]
     shareable: bool,
     level_type: String,
     min_players: u8,
     max_players: u8,
-    #[serde_inline_default(false)]
+    #[serde(default)]
     move_required: bool,
-    #[serde_inline_default(false)]
+    #[serde(default)]
     vita_cross_control_required: bool,
 }
 
-pub async fn start_publish(payload: actix_xml::Xml<SlotPublishPayload>, config: Data<Config>) -> Result<impl Responder> {
-    let mut resources: Vec<&String> = payload.resource.iter().map(|r| r).collect();
-    resources.push(&payload.icon);
-    resources.push(&payload.root_level);
+pub async fn start_publish(
+    payload: actix_xml::Xml<SlotPublishPayload>,
+    config: Data<Config>,
+) -> Result<impl Responder> {
+    let mut resources = payload.resource.clone();
+    if let Some(icon) = &payload.icon {
+        resources.push(icon.clone());
+    }
+    resources.push(ResourceRef::Hash(payload.root_level));
 
     Ok(Xml(xml!(
         slot type="user" {
             @for resource in resources {
-                @if check_sha1(&resource) && !get_res_path(&config.resource_dir, &resource).exists() {
-                    resource { (resource) }
+                @if !resource.exists(&config.resource_dir) {
+                    resource { (resource.to_string()) }
                 }
             }
         }
     ).into_string()))
 }
 
-pub async fn publish(payload: actix_xml::Xml<SlotPublishPayload>, config: Data<Config>) -> Result<impl Responder> {
-    if !res_exists(&config.resource_dir, &payload.root_level, true, true) {
-        return Err(error::ErrorBadRequest(""))
-    }
-    {
-        let mut resources: Vec<&String> = payload.resource.iter().map(|r| r).collect();
-        resources.push(&payload.icon);
-        for res in resources {
-            if !res_exists(&config.resource_dir, res, true, false) {
-                return Err(error::ErrorBadRequest(""))
-            }
+pub async fn publish(
+    pl: actix_xml::Xml<SlotPublishPayload>,
+    pool: Data<Arc<Pool<Postgres>>>,
+    config: Data<Config>,
+    session: ReqData<SessionData>,
+) -> Result<impl Responder> {
+    for num_players in [pl.min_players, pl.max_players] {
+        if ![1, 2, 3, 4].contains(&num_players) {
+            return Err(error::ErrorBadRequest("Invalid player num"));
         }
     }
-    
-    // TODO: finish this lol
+    if pl.max_players < pl.min_players {
+        return Err(error::ErrorBadRequest(
+            "Max players greater than min players",
+        ));
+    }
+
+    let mut resources = pl.resource.clone();
+    if let Some(icon) = &pl.icon {
+        resources.push(icon.clone());
+    }
+    resources.push(ResourceRef::Hash(pl.root_level));
+    for res in resources {
+        if !res.exists(&config.resource_dir) {
+            return Err(error::ErrorBadRequest("One or more resources don't exist"));
+        }
+    }
+
+    // TODO: add checks based on game version
+
+    let res_array: Vec<String> = pl.resource.iter().map(|r| r.to_string()).collect();
+
+    sqlx::query!(
+        "INSERT INTO slots (
+            name, description, icon, gamever, root_level, resources, location_x, location_y,
+            initially_locked, is_sub_level, is_lbp1_only, shareable, level_type,
+            min_players, max_players, move_required, vita_cc_required
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)",
+        pl.name,
+        pl.description,
+        pl.icon.as_ref().map(|r| r.to_string()),
+        session.game_version as i16,
+        hex::encode(pl.root_level),
+        res_array.as_slice(),
+        pl.location.x as i32,
+        pl.location.y as i32,
+        pl.initially_locked,
+        pl.is_sub_level,
+        pl.isLBP1Only,
+        pl.shareable,
+        pl.level_type,
+        pl.min_players as i16,
+        pl.max_players as i16,
+        pl.move_required,
+        pl.vita_cross_control_required
+    )
+    .execute(&***pool)
+    .await
+    .map_err(error::ErrorInternalServerError)?;
 
     Ok(HttpResponse::Ok())
 }

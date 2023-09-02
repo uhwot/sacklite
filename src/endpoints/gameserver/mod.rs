@@ -6,13 +6,13 @@ use crate::middleware;
 
 mod auth;
 mod client_config;
+mod comment;
 mod enter_level;
 mod message;
+mod publish;
+mod resource;
 mod tags;
 mod user;
-mod resource;
-mod comment;
-mod publish;
 
 // i would have split this shit up, but actix-web doesn't let me ¯\_(ツ)_/¯
 pub fn cfg(cfg: &mut web::ServiceConfig) {
@@ -42,14 +42,30 @@ pub fn cfg(cfg: &mut web::ServiceConfig) {
             // resource
             .route("/r/{hash}", web::get().to(resource::download))
             .route("/upload/{hash}", web::post().to(resource::upload))
-            .route("/filterResources", web::post().to(resource::filter_resources))
-            .route("/showNotUploaded", web::post().to(resource::filter_resources))
+            .route(
+                "/filterResources",
+                web::post().to(resource::filter_resources),
+            )
+            .route(
+                "/showNotUploaded",
+                web::post().to(resource::filter_resources),
+            )
             // comment
-            .route("/userComments/{online_id}", web::get().to(comment::user_comments))
-            .route("/postUserComment/{online_id}", web::post().to(comment::post_user_comment))
-            .route("/deleteUserComment/{online_id}", web::post().to(comment::delete_user_comment))
+            .route(
+                "/userComments/{online_id}",
+                web::get().to(comment::user_comments),
+            )
+            .route(
+                "/postUserComment/{online_id}",
+                web::post().to(comment::post_user_comment),
+            )
+            .route(
+                "/deleteUserComment/{online_id}",
+                web::post().to(comment::delete_user_comment),
+            )
             // publish
-            .route("/startPublish", web::get().to(publish::start_publish))
+            .route("/startPublish", web::post().to(publish::start_publish))
+            .route("/publish", web::post().to(publish::publish))
             // client config
             .route(
                 "/network_settings.nws",

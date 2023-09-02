@@ -11,7 +11,7 @@ actix-web = { version = "4.3", default-features = false, features = ["macros", "
 actix-web-lab = "0.19"
 actix-http = "3.3"
 actix-session = { version = "0.7", features = ["redis-actor-session"] }
-actix-xml = { git = "https://github.com/uhwot/actix-xml.git", rev = "0d9ce91a", default-features = false }
+actix-xml = { git = "https://github.com/uhwot/actix-xml.git", rev = "d35c6e14", default-features = false }
 mime = "0.3"
 
 sqlx = { version = "0.7", features = ["runtime-tokio", "tls-rustls", "postgres", "macros", "migrate", "uuid", "chrono", "bigdecimal"] }
@@ -28,10 +28,11 @@ env_logger = "0.10"
 serde = { version = "1.0", features = ["derive"] }
 serde_yaml = "0.9"
 serde_json = "1.0"
-serde-inline-default = "0.1"
+serde_with = { version = "3.3", features = ["hex"] }
 
 sha1 = "0.10"
 openssl = "0.10"
+hex = "0.4"
 hex-literal = "0.4"
 base64 = "0.21"
 
