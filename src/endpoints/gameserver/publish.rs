@@ -103,11 +103,12 @@ pub async fn publish(
 
     sqlx::query!(
         "INSERT INTO slots (
-            name, description, icon, gamever, root_level, resources, location_x, location_y,
+            name, author, description, icon, gamever, root_level, resources, location_x, location_y,
             initially_locked, is_sub_level, is_lbp1_only, shareable, level_type,
             min_players, max_players, move_required, vita_cc_required
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)",
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)",
         pl.name,
+        session.user_id,
         pl.description,
         pl.icon.as_ref().map(|r| r.to_string()),
         session.game_version as i16,
