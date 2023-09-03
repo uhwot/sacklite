@@ -40,7 +40,7 @@ pub async fn user(
 
     Ok(Xml(xml!(
         user type="user" {
-            npHandle icon=(user.icon) { (user.online_id) }
+            npHandle icon=(user.icon.as_deref().unwrap_or_default()) { (user.online_id) }
             game { (&(session.game_version as u8)) }
             lbp1UsedSlots { "0" }
             entitledSlots { "20" }
@@ -63,13 +63,13 @@ pub async fn user(
             planets {(
                 match session.game_version {
                     GameVersion::Lbp1 => "",
-                    GameVersion::Lbp2 => &user.lbp2_planets,
-                    GameVersion::Lbp3 => &user.lbp3_planets
+                    GameVersion::Lbp2 => user.lbp2_planets.as_deref().unwrap_or_default(),
+                    GameVersion::Lbp3 => user.lbp3_planets.as_deref().unwrap_or_default(),
                 })
             }
-            crossControlPlanet { (user.cross_control_planet) }
-            yay2 { (user.yay2) }
-            boo2 { (user.boo2) }
+            crossControlPlanet { (user.cross_control_planet.as_deref().unwrap_or_default()) }
+            yay2 { (user.yay2.as_deref().unwrap_or_default()) }
+            boo2 { (user.boo2.as_deref().unwrap_or_default()) }
             biography { (user.biography) }
             reviewCount { "0" }
             commentCount { (user.comment_count.unwrap_or(0)) }
@@ -121,7 +121,7 @@ pub async fn users(
         users {
             @while let Some(user) = users.try_next().await.map_err(error::ErrorInternalServerError)? {
                 user type="user" {
-                    npHandle icon=(user.icon) { (user.online_id) }
+                    npHandle icon=(user.icon.as_deref().unwrap_or_default()) { (user.online_id) }
                 }
             }
         }
