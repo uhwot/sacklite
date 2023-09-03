@@ -8,12 +8,12 @@ use actix_web::{
 use log::debug;
 use maud::html as xml;
 use serde::Deserialize;
-use serde_with::{serde_as, DisplayFromStr};
+use serde_with::serde_as;
 use sha1::{Digest, Sha1};
 
 use crate::{
     responder::Xml,
-    types::{Config, ResourceRef},
+    types::Config,
     utils::resource::{get_hash_path, str_to_hash},
 };
 
@@ -74,8 +74,8 @@ pub async fn upload(
 #[derive(Deserialize)]
 pub struct ResourceList {
     #[serde(default)]
-    #[serde_as(as = "Vec<DisplayFromStr>")]
-    resource: Vec<ResourceRef>,
+    #[serde_as(as = "Vec<serde_with::hex::Hex>")]
+    resource: Vec<[u8; 20]>,
 }
 
 pub async fn filter_resources(
@@ -85,9 +85,9 @@ pub async fn filter_resources(
     {
         Ok(Xml(xml!(
             resources {
-                @for resource in &payload.resource {
-                    @if !resource.exists(&config.resource_dir) {
-                        resource { (resource.to_string()) }
+                @for hash in &payload.resource {
+                    @if !get_hash_path(&config.resource_dir, *hash).exists() {
+                        resource { (hex::encode(hash)) }
                     }
                 }
             }

@@ -29,8 +29,8 @@ pub struct SlotPublishPayload {
     #[serde_as(as = "serde_with::hex::Hex")]
     root_level: [u8; 20],
     #[serde(default)]
-    #[serde_as(as = "Vec<DisplayFromStr>")]
-    resource: Vec<ResourceRef>,
+    #[serde_as(as = "Vec<serde_with::hex::Hex>")]
+    resource: Vec<[u8; 20]>,
     location: Location,
     initially_locked: bool,
     #[serde(default)]
@@ -52,7 +52,7 @@ pub async fn start_publish(
     payload: actix_xml::Xml<SlotPublishPayload>,
     config: Data<Config>,
 ) -> Result<impl Responder> {
-    let mut resources = payload.resource.clone();
+    let mut resources: Vec<ResourceRef> = payload.resource.iter().map(|r| ResourceRef::Hash(*r)).collect();
     if let Some(icon) = &payload.icon {
         resources.push(icon.clone());
     }
@@ -86,7 +86,7 @@ pub async fn publish(
         ));
     }
 
-    let mut resources = pl.resource.clone();
+    let mut resources: Vec<ResourceRef> = pl.resource.iter().map(|r| ResourceRef::Hash(*r)).collect();
     if let Some(icon) = &pl.icon {
         resources.push(icon.clone());
     }
@@ -99,7 +99,7 @@ pub async fn publish(
 
     // TODO: add checks based on game version
 
-    let res_array: Vec<String> = pl.resource.iter().map(|r| r.to_string()).collect();
+    let res_array: Vec<String> = pl.resource.iter().map(hex::encode).collect();
 
     sqlx::query!(
         "INSERT INTO slots (
