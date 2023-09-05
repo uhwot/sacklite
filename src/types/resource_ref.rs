@@ -1,6 +1,7 @@
 use std::{str::FromStr, fmt};
 
 use anyhow::{Context, Result};
+use serde::{de, Deserialize, Deserializer};
 
 use crate::utils::resource::{get_hash_path, str_to_hash};
 
@@ -35,11 +36,20 @@ impl FromStr for ResourceRef {
     }
 }
 
+impl<'de> Deserialize<'de> for ResourceRef {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+        where D: Deserializer<'de>
+    {
+        let s = String::deserialize(deserializer)?;
+        FromStr::from_str(&s).map_err(de::Error::custom)
+    }
+}
+
 impl fmt::Display for ResourceRef {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Guid(g) => write!(f, "g{g}"),
-            Self::Hash(h) => write!(f, "{h:x?}"),
+            Self::Hash(h) => write!(f, "{}", hex::encode(h)),
         }
     }
 }

@@ -1,6 +1,6 @@
 use anyhow::{bail, Context};
 use regex::Regex;
-use std::convert::TryFrom;
+use std::{convert::TryFrom, fmt};
 
 // title ids copied from:
 // https://github.com/LBPUnion/ProjectLighthouse/blob/329ab660430820e87879f60f310840b9682eac4f/ProjectLighthouse/Types/Users/GameVersion.cs
@@ -143,6 +143,16 @@ impl TryFrom<u8> for GameVersion {
             x if x == GameVersion::Lbp2 as u8 => Ok(GameVersion::Lbp2),
             x if x == GameVersion::Lbp3 as u8 => Ok(GameVersion::Lbp3),
             _ => Err(()),
+        }
+    }
+}
+
+impl fmt::Display for GameVersion {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            GameVersion::Lbp1 => write!(f, "lbp1"),
+            GameVersion::Lbp2 => write!(f, "lbp2"),
+            GameVersion::Lbp3 => write!(f, "lbp3"),
         }
     }
 }

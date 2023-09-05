@@ -2,18 +2,17 @@ use std::sync::Arc;
 
 use actix_web::{
     error,
-    web::{self, Data, Json, Path, ReqData},
+    web::{Data, Json, Path, ReqData, Query},
     HttpResponse, Responder, Result,
 };
 use futures::TryStreamExt;
 use maud::html as xml;
 use serde::{Deserialize, Serialize};
-use serde_with::{serde_as, DefaultOnError, DisplayFromStr};
 use sqlx::{Pool, Postgres};
 
 use crate::{
     responder::Xml,
-    types::{Config, GameVersion, SessionData, ResourceRef}, utils::resource::get_hash_path,
+    types::{Config, GameVersion, SessionData, ResourceRef}, utils::{resource::get_hash_path, serde::double_option_err},
 };
 
 use super::Location;
@@ -108,7 +107,7 @@ pub struct UsersQuery {
 }
 
 pub async fn users(
-    query: web::Query<UsersQuery>,
+    query: Query<UsersQuery>,
     pool: Data<Arc<Pool<Postgres>>>,
 ) -> Result<impl Responder> {
     let mut users = sqlx::query!(
@@ -128,34 +127,33 @@ pub async fn users(
     ).into_string()))
 }
 
-#[serde_as]
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
+pub struct SlotList {
+    #[serde(default)]
+    slot: Vec<Slot>
+}
+
+#[derive(Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateUserPayload {
     location: Option<Location>,
     biography: Option<String>,
-    #[serde(default)]
-    #[serde_as(as = "Option<DefaultOnError<Option<DisplayFromStr>>>")]
+    #[serde(default, with = "double_option_err")]
     icon: Option<Option<ResourceRef>>,
-    #[serde(default)]
-    #[serde_as(as = "Option<DefaultOnError<Option<serde_with::hex::Hex>>>")]
-    planets: Option<Option<[u8; 20]>>,
-    #[serde(default)]
-    #[serde_as(as = "Option<DefaultOnError<Option<serde_with::hex::Hex>>>")]
-    cross_control_planet: Option<Option<[u8; 20]>>,
-    slots: Option<Vec<Slot>>,
-    #[serde(default)]
-    #[serde_as(as = "Option<DefaultOnError<Option<serde_with::hex::Hex>>>")]
-    yay2: Option<Option<[u8; 20]>>,
-    #[serde(default)]
-    #[serde_as(as = "Option<DefaultOnError<Option<serde_with::hex::Hex>>>")]
-    meh2: Option<Option<[u8; 20]>>,
-    #[serde(default)]
-    #[serde_as(as = "Option<DefaultOnError<Option<serde_with::hex::Hex>>>")]
-    boo2: Option<Option<[u8; 20]>>,
+    #[serde(default, with = "double_option_err")]
+    planets: Option<Option<ResourceRef>>,
+    #[serde(default, with = "double_option_err")]
+    cross_control_planet: Option<Option<ResourceRef>>,
+    slots: Option<SlotList>,
+    #[serde(default, with = "double_option_err")]
+    yay2: Option<Option<ResourceRef>>,
+    #[serde(default, with = "double_option_err")]
+    meh2: Option<Option<ResourceRef>>,
+    #[serde(default, with = "double_option_err")]
+    boo2: Option<Option<ResourceRef>>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct Slot {
     id: u64,
@@ -173,15 +171,20 @@ pub async fn update_user(
             return Err(error::ErrorBadRequest("Icon resource invalid"));
         }
     }
-    for hash in [
+    for res_ref in [
         &payload.planets,
         &payload.cross_control_planet,
         &payload.yay2,
         &payload.meh2,
         &payload.boo2,
     ].into_iter().flatten().flatten() {
-        if get_hash_path(&config.resource_dir, *hash).exists() {
-            return Err(error::ErrorBadRequest("Resource(s) invalid"));
+        match res_ref {
+            ResourceRef::Hash(hash) => {
+                if !get_hash_path(&config.resource_dir, *hash).exists() {
+                    return Err(error::ErrorBadRequest("Resource(s) invalid"));
+                }
+            },
+            ResourceRef::Guid(_) => return Err(error::ErrorBadRequest("Resource(s) cannot be a GUID"))
         }
     }
 
@@ -211,7 +214,7 @@ pub async fn update_user(
             .map_err(error::ErrorInternalServerError)?;
     }
     if let Some(planets) = &payload.planets {
-        let planets = planets.map(hex::encode);
+        let planets = planets.as_ref().map(|r| r.to_string());
         match session.game_version {
             GameVersion::Lbp1 => {}
             GameVersion::Lbp2 => {
@@ -239,7 +242,7 @@ pub async fn update_user(
     if let Some(ccplanet) = &payload.cross_control_planet {
         sqlx::query!(
             "UPDATE users SET cross_control_planet = $1 WHERE id = $2",
-            ccplanet.map(|r| hex::encode(r)),
+            ccplanet.as_ref().map(|r| r.to_string()),
             session.user_id
         )
         .execute(&***pool)
@@ -249,7 +252,7 @@ pub async fn update_user(
     if let Some(yay2) = &payload.yay2 {
         sqlx::query!(
             "UPDATE users SET yay2 = $1 WHERE id = $2",
-            yay2.map(|r| hex::encode(r)),
+            yay2.as_ref().map(|r| r.to_string()),
             session.user_id
         )
         .execute(&***pool)
@@ -259,7 +262,7 @@ pub async fn update_user(
     if let Some(meh2) = &payload.meh2 {
         sqlx::query!(
             "UPDATE users SET meh2 = $1 WHERE id = $2",
-            meh2.map(|r| hex::encode(r)),
+            meh2.as_ref().map(|r| r.to_string()),
             session.user_id
         )
         .execute(&***pool)
@@ -269,12 +272,26 @@ pub async fn update_user(
     if let Some(boo2) = &payload.boo2 {
         sqlx::query!(
             "UPDATE users SET boo2 = $1 WHERE id = $2",
-            boo2.map(|r| hex::encode(r)),
+            boo2.as_ref().map(|r| r.to_string()),
             session.user_id
         )
         .execute(&***pool)
         .await
         .map_err(error::ErrorInternalServerError)?;
+    }
+    if let Some(slots) = &payload.slots {
+        for slot in &slots.slot {
+            sqlx::query!(
+                "UPDATE slots
+                SET location_x = $1, location_y = $2
+                WHERE id = $3 AND author = $4",
+                slot.location.x as i32, slot.location.y as i32,
+                slot.id as i64, session.user_id
+            )
+            .execute(&***pool)
+            .await
+            .map_err(error::ErrorInternalServerError)?;
+        }
     }
 
     Ok(HttpResponse::Ok())

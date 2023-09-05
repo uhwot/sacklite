@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use actix_web::{
     error,
-    web::{self, Data, Path, ReqData},
+    web::{Data, Path, ReqData, Query},
     HttpResponse, Responder, Result,
 };
 use futures::TryStreamExt;
@@ -21,7 +21,7 @@ pub struct CommentListQuery {
 
 pub async fn user_comments(
     path: Path<String>,
-    query: web::Query<CommentListQuery>,
+    query: Query<CommentListQuery>,
     pool: Data<Arc<Pool<Postgres>>>,
 ) -> Result<impl Responder> {
     let online_id = path.into_inner();
@@ -117,35 +117,24 @@ pub struct CommentDeleteQuery {
 }
 
 pub async fn delete_user_comment(
-    query: web::Query<CommentDeleteQuery>,
+    query: Query<CommentDeleteQuery>,
     pool: Data<Arc<Pool<Postgres>>>,
     session: ReqData<SessionData>,
 ) -> Result<impl Responder> {
-    let comment_id = query.comment_id as i64;
-
-    let comment = sqlx::query!(
-        "SELECT author, target_user FROM comments WHERE id = $1",
-        comment_id
-    )
-    .fetch_optional(&***pool)
-    .await
-    .map_err(error::ErrorInternalServerError)?
-    .ok_or(error::ErrorNotFound("Comment not found"))?;
-
-    if session.user_id != comment.author && comment.target_user != Some(session.user_id) {
-        return Err(error::ErrorUnauthorized(
-            "Not authorized to delete this comment",
-        ));
-    }
-
-    sqlx::query!(
-        "UPDATE comments SET deleted_by = $1 WHERE id = $2",
+    let rows = sqlx::query!(
+        "UPDATE comments SET deleted_by = $1
+        WHERE id = $2 AND deleted_by IS NULL AND deleted_by_mod = false AND (author = $1 OR target_user = $1)",
         session.user_id,
-        comment_id
+        query.comment_id as i64
     )
     .execute(&***pool)
     .await
-    .map_err(error::ErrorInternalServerError)?;
+    .map_err(error::ErrorInternalServerError)?
+    .rows_affected();
+
+    if rows == 0 {
+        return Err(error::ErrorUnauthorized("Comment not found, already deleted or not authorized to delete"))
+    }
 
     Ok(HttpResponse::Ok())
 }

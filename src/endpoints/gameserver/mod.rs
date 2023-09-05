@@ -13,6 +13,7 @@ mod publish;
 mod resource;
 mod tags;
 mod user;
+mod slot_search;
 
 // i would have split this shit up, but actix-web doesn't let me ¯\_(ツ)_/¯
 pub fn cfg(cfg: &mut web::ServiceConfig) {
@@ -66,6 +67,8 @@ pub fn cfg(cfg: &mut web::ServiceConfig) {
             // publish
             .route("/startPublish", web::post().to(publish::start_publish))
             .route("/publish", web::post().to(publish::publish))
+            .route("/unpublish/{id}", web::post().to(publish::unpublish))
+            .route("/slots/by", web::get().to(slot_search::slots_by))
             // client config
             .route(
                 "/network_settings.nws",
@@ -74,7 +77,7 @@ pub fn cfg(cfg: &mut web::ServiceConfig) {
     );
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 struct Location {
     x: u16,
     y: u16,
