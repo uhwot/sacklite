@@ -18,6 +18,7 @@ pub struct Config {
 
     pub resource_dir: String,
     pub payload_limit: u32,
+    pub slot_limit: u32,
 
     pub create_user_on_connect: bool,
     pub rename_users_automatically: bool,

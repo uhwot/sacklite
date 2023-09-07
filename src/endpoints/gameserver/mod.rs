@@ -14,6 +14,7 @@ mod resource;
 mod tags;
 mod user;
 mod slot_search;
+mod slot;
 
 // i would have split this shit up, but actix-web doesn't let me ¯\_(ツ)_/¯
 pub fn cfg(cfg: &mut web::ServiceConfig) {
@@ -64,11 +65,14 @@ pub fn cfg(cfg: &mut web::ServiceConfig) {
                 "/deleteUserComment/{online_id}",
                 web::post().to(comment::delete_user_comment),
             )
+            // slot
+            .route("/s/{type}/{id}", web::get().to(slot::slot))
+            // slot search
+            .route("/slots/by", web::get().to(slot_search::slots_by))
             // publish
             .route("/startPublish", web::post().to(publish::start_publish))
             .route("/publish", web::post().to(publish::publish))
             .route("/unpublish/{id}", web::post().to(publish::unpublish))
-            .route("/slots/by", web::get().to(slot_search::slots_by))
             // client config
             .route(
                 "/network_settings.nws",

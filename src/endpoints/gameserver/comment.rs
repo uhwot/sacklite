@@ -15,8 +15,8 @@ use crate::{responder::Xml, types::SessionData};
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CommentListQuery {
-    page_start: u64,
-    page_size: u64,
+    page_start: i64,
+    page_size: i64,
 }
 
 pub async fn user_comments(
@@ -26,13 +26,6 @@ pub async fn user_comments(
 ) -> Result<impl Responder> {
     let online_id = path.into_inner();
 
-    let user_id = sqlx::query!("SELECT id FROM users WHERE online_id = $1", online_id)
-        .fetch_optional(&***pool)
-        .await
-        .map_err(error::ErrorInternalServerError)?
-        .ok_or(error::ErrorNotFound("User not found"))?
-        .id;
-
     // what the fuck have i done
     let mut comments = sqlx::query!(
         "SELECT comm.id, comm.posted_at, comm.content, comm.deleted_by_mod,
@@ -40,13 +33,14 @@ pub async fn user_comments(
         deleter.online_id AS \"deleter_oid?\"
         FROM comments comm
         JOIN users author ON comm.author = author.id
+        JOIN users target_user ON comm.target_user = target_user.id
         LEFT JOIN users AS deleter ON comm.deleted_by = deleter.id
-        WHERE comm.target_user = $1
+        WHERE target_user.online_id = $1
         ORDER BY comm.posted_at DESC
         LIMIT $2 OFFSET $3",
-        user_id,
-        query.page_size as i64,
-        query.page_start as i64 - 1
+        online_id,
+        query.page_size,
+        query.page_start - 1
     )
     .fetch(&***pool);
 
@@ -113,7 +107,7 @@ pub async fn post_user_comment(
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CommentDeleteQuery {
-    comment_id: u64,
+    comment_id: i64,
 }
 
 pub async fn delete_user_comment(
@@ -125,7 +119,7 @@ pub async fn delete_user_comment(
         "UPDATE comments SET deleted_by = $1
         WHERE id = $2 AND deleted_by IS NULL AND deleted_by_mod = false AND (author = $1 OR target_user = $1)",
         session.user_id,
-        query.comment_id as i64
+        query.comment_id
     )
     .execute(&***pool)
     .await

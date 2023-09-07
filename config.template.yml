@@ -15,6 +15,7 @@ announcement: |
 
 resource_dir: "./resrc"
 payload_limit: 1000000
+slot_limit: 20
 
 create_user_on_connect: true
 rename_users_automatically: true

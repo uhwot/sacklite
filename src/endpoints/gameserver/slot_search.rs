@@ -15,8 +15,8 @@ use crate::{responder::Xml, types::SessionData};
 #[serde(rename_all = "camelCase")]
 pub struct SlotSearchQuery {
     u: String,
-    page_start: u64,
-    page_size: u64,
+    page_start: i64,
+    page_size: i64,
     game_filter_type: Option<String>,
 }
 
@@ -40,7 +40,7 @@ pub async fn slots_by(
         WHERE author = $1 AND gamever <= $2
         ORDER BY published_at DESC
         LIMIT $3 OFFSET $4",
-        user_id, session.game_version as i16, query.page_size as i64, query.page_start as i64 - 1
+        user_id, session.game_version as i16, query.page_size, query.page_start - 1
     )
     .fetch_all(&***pool)
     .await

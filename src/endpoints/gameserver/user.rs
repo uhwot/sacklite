@@ -21,13 +21,22 @@ pub async fn user(
     path: Path<String>,
     pool: Data<Arc<Pool<Postgres>>>,
     session: ReqData<SessionData>,
+    config: Data<Config>,
 ) -> Result<impl Responder> {
     let online_id = path.into_inner();
 
     // https://stackoverflow.com/a/26727307
     let user = sqlx::query!(
-        "SELECT users.*, COUNT(comments.id) AS comment_count
-        FROM users LEFT JOIN comments ON users.id = comments.target_user
+        "SELECT users.*,
+        COUNT(DISTINCT comments.id) AS comment_count,
+        COUNT(DISTINCT lbp1slot.id) AS lbp1slot_count,
+        COUNT(DISTINCT lbp2slot.id) AS lbp2slot_count,
+        COUNT(DISTINCT lbp3slot.id) AS lbp3slot_count
+        FROM users
+        LEFT JOIN comments ON users.id = comments.target_user
+        LEFT JOIN slots lbp1slot ON users.id = lbp1slot.author AND lbp1slot.gamever = 0
+        LEFT JOIN slots lbp2slot ON users.id = lbp2slot.author AND lbp2slot.gamever = 1
+        LEFT JOIN slots lbp3slot ON users.id = lbp3slot.author AND lbp3slot.gamever = 2
         WHERE online_id = $1
         GROUP BY users.id",
         online_id
@@ -37,25 +46,30 @@ pub async fn user(
     .map_err(error::ErrorInternalServerError)?
     .ok_or(error::ErrorNotFound("User not found"))?;
 
+    let slot_limit = config.slot_limit as i64;
+    let lbp1slot_count = user.lbp1slot_count.unwrap_or_default();
+    let lbp2slot_count = user.lbp2slot_count.unwrap_or_default();
+    let lbp3slot_count = user.lbp3slot_count.unwrap_or_default();
+
     Ok(Xml(xml!(
         user type="user" {
             npHandle icon=(user.icon.as_deref().unwrap_or_default()) { (user.online_id) }
             game { (&(session.game_version as u8)) }
-            lbp1UsedSlots { "0" }
-            entitledSlots { "20" }
-            freeSlots { "20" }
+            lbp1UsedSlots { (lbp1slot_count) }
+            entitledSlots { (slot_limit) }
+            freeSlots { (&(slot_limit - lbp1slot_count)) }
             crossControlUsedSlots { "0" }
-            crossControlEntitledSlots { "20" }
+            crossControlEntitledSlots { (slot_limit) }
             crossControlPurchsedSlots { "0" }
-            crossControlFreeSlots { "20" }
-            lbp2UsedSlots { "0" }
-            lbp2EntitledSlots { "20" }
+            crossControlFreeSlots { (slot_limit) }
+            lbp2UsedSlots { (lbp2slot_count) }
+            lbp2EntitledSlots { (slot_limit) }
             lbp2PurchasedSlots { "0" }
-            lbp2FreeSlots { "20" }
-            lbp3UsedSlots { "0" }
-            lbp3EntitledSlots { "20" }
+            lbp2FreeSlots { (&(slot_limit - lbp2slot_count)) }
+            lbp3UsedSlots { (lbp3slot_count) }
+            lbp3EntitledSlots { (slot_limit) }
             lbp3PurchasedSlots { "0" }
-            lbp3FreeSlots { "20" }
+            lbp3FreeSlots { (&(slot_limit - lbp3slot_count)) }
             lists { "0" }
             lists_quota { "20" }
             heartCount { "0" }
@@ -71,7 +85,7 @@ pub async fn user(
             boo2 { (user.boo2.as_deref().unwrap_or_default()) }
             biography { (user.biography) }
             reviewCount { "0" }
-            commentCount { (user.comment_count.unwrap_or(0)) }
+            commentCount { (user.comment_count.unwrap_or_default()) }
             photosByMeCount { "0" }
             photosWithMeCount { "0" }
             commentsEnabled { "true" }
@@ -91,12 +105,12 @@ pub async fn user(
             staffChallengeSilverCount { "0" }
             staffChallengeBronzeCount { "0" }
             photos {} // TODO: make separate photo entity?
-            clientsConnected {
+            /*clientsConnected {
                 lbp1 { "true" }
                 lbp2 { "true" }
                 lbpme { "true" }
                 lbp3ps3 { "true" }
-            }
+            }*/
         }
     ).into_string()))
 }
@@ -156,7 +170,7 @@ pub struct UpdateUserPayload {
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct Slot {
-    id: u64,
+    id: i64,
     location: Location,
 }
 
@@ -286,7 +300,7 @@ pub async fn update_user(
                 SET location_x = $1, location_y = $2
                 WHERE id = $3 AND author = $4",
                 slot.location.x as i32, slot.location.y as i32,
-                slot.id as i64, session.user_id
+                slot.id, session.user_id
             )
             .execute(&***pool)
             .await
@@ -327,7 +341,7 @@ pub async fn get_my_pins(
 }
 
 pub async fn update_my_pins(
-    mut payload: Json<UserPinsPayload>,
+    payload: Json<UserPinsPayload>,
     pool: Data<Arc<Pool<Postgres>>>,
     session: ReqData<SessionData>,
 ) -> Result<impl Responder> {
@@ -367,9 +381,6 @@ pub async fn update_my_pins(
         .await
         .map_err(error::ErrorInternalServerError)?;
     }
-
-    // packet captures don't have profile pins in the response
-    payload.profile_pins = None;
 
     Ok(Json(payload))
 }
