@@ -1,4 +1,5 @@
-use axum::{Router, routing::{get, post}, extract::{Path, Query, State}, http::StatusCode, response::{IntoResponse, Response}, Extension};
+use axum::{Router, routing::{get, post}, extract::{Path, State}, http::StatusCode, response::{IntoResponse, Response}, Extension};
+use axum_extra::extract::Query;
 use futures::TryStreamExt;
 use maud::html as xml;
 use serde::Deserialize;

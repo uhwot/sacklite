@@ -1,18 +1,22 @@
 use axum::{
     routing::{get, post},
     Router,
-    extract::{Path, State, Query},
+    extract::{Path, State},
     response::{IntoResponse, Response},
     http::StatusCode,
     Extension
 };
+use axum_extra::extract::Query;
 use futures::TryStreamExt;
 use maud::html as xml;
 use serde::{Deserialize, Serialize};
 
 use crate::{
     responders::Xml,
-    types::{GameVersion, SessionData, ResourceRef}, utils::{resource::get_hash_path, serde::double_option_err}, AppState, extractors::{Json, self},
+    types::{GameVersion, SessionData, ResourceRef},
+    utils::{resource::get_hash_path, serde::double_option_err},
+    AppState,
+    extractors::{Json, self},
 };
 
 use super::Location;
