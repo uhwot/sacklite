@@ -1,35 +1,33 @@
-use std::sync::Arc;
-
-use actix_web::{
-    error,
-    web::{Data, ReqData, Query},
-    Responder, Result,
-};
+use axum::{Router, routing::get, extract::{Query, State}, Extension, http::StatusCode, response::{IntoResponse, Response}};
 use maud::html as xml;
 use serde::Deserialize;
-use sqlx::{Pool, Postgres};
 
-use crate::{responder::Xml, types::SessionData};
+use crate::{responders::Xml, types::SessionData, AppState};
+
+pub fn routes() -> Router<AppState> {
+    Router::new()
+        .route("/slots/by", get(slots_by))
+}
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct SlotSearchQuery {
+struct SlotSearchQuery {
     u: String,
     page_start: i64,
     page_size: i64,
     game_filter_type: Option<String>,
 }
 
-pub async fn slots_by(
+async fn slots_by(
     query: Query<SlotSearchQuery>,
-    pool: Data<Arc<Pool<Postgres>>>,
-    session: ReqData<SessionData>,
-) -> Result<impl Responder> {
+    State(state): State<AppState>,
+    session: Extension<SessionData>,
+) -> Result<impl IntoResponse, Response> {
     let user_id = sqlx::query!("SELECT id FROM users WHERE online_id = $1", query.u)
-        .fetch_optional(&***pool)
+        .fetch_optional(&state.pool)
         .await
-        .map_err(error::ErrorInternalServerError)?
-        .ok_or(error::ErrorNotFound("User not found"))?
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())?
+        .ok_or((StatusCode::NOT_FOUND, "User not found").into_response())?
         .id;
 
     // TODO: use game_filter_type param
@@ -42,11 +40,11 @@ pub async fn slots_by(
         LIMIT $3 OFFSET $4",
         user_id, session.game_version as i16, query.page_size, query.page_start - 1
     )
-    .fetch_all(&***pool)
+    .fetch_all(&state.pool)
     .await
-    .map_err(error::ErrorInternalServerError)?;
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())?;
     
-    let total = slots.get(0);
+    let total = slots.first();
     let total = match total {
         Some(r) => r.total.unwrap(),
         None => 0,
@@ -98,5 +96,5 @@ pub async fn slots_by(
                 }
             }
         }
-    ).into_string()))
+    )))
 }

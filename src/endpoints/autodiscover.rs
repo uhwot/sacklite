@@ -1,18 +1,17 @@
-use crate::types::Config;
-use actix_web::{
-    web::{Data, Json},
-    Responder,
-};
-use serde_json::json;
+use crate::AppState;
+use axum::{extract::State, Json};
+use serde_json::{json, Value};
 
 // docs:
-// https://github.com/LittleBigRefresh/Docs/blob/c770a444949b3902c7b16e57f840da10bb279159/autodiscover-api.md
+// https://docs.littlebigrefresh.com/autodiscover-api.html
 
-pub async fn autodiscover(config: Data<Config>) -> impl Responder {
+pub async fn autodiscover(State(state): State<AppState>) -> Json<Value> {
     Json(json!({
-        "version": 2,
+        "version": 3,
         "serverBrand": "sacklite",
-        "url": config.external_url.clone() + &config.base_path,
-        "usesCustomDigestKey": config.digest_key == "CustomServerDigest",
+        "url": state.config.external_url.clone() + &state.config.base_path,
+        "usesCustomDigestKey": state.config.digest_key == "CustomServerDigest",
+        "serverDescription": state.config.server_desc.clone(),
+        "bannerImageUrl": state.config.banner_image_url,
     }))
 }

@@ -1,10 +1,15 @@
-use actix_web::web::Path;
-use actix_web::{HttpResponse, Responder};
+use axum::{Router, routing::post, extract::Path, http::StatusCode};
 
-pub async fn enter_level(path: Path<(String, u64)>) -> impl Responder {
-    let (slot_type, _) = path.into_inner();
+use crate::AppState;
+
+pub fn routes() -> Router<AppState> {
+    Router::new()
+        .route("/enterLevel/:type/:id", post(enter_level))
+}
+
+async fn enter_level(Path((slot_type, _)): Path<(String, u64)>) -> StatusCode {
     if !["developer", "user"].contains(&slot_type.as_str()) {
-        return HttpResponse::NotFound();
+        return StatusCode::NOT_FOUND;
     }
-    HttpResponse::Ok()
+    StatusCode::OK
 }

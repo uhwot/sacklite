@@ -7,14 +7,17 @@ db_conn: "postgres://postgres@localhost/sacklite"
 redis_conn: "127.0.0.1:6379"
 log_level: "info"
 
+server_desc: "best server ever"
+banner_image_url: null
+
 eula: |
   some legalese or something idk
 announcement: |
-  I've come to make an announcement,
-  Shadow the Hedgehog is a b-
+  hello :)
+  wow, so multi-line :O
 
 resource_dir: "./resrc"
-payload_limit: 1000000
+resource_size_limit: 2000000 # 2 MB
 slot_limit: 20
 
 create_user_on_connect: true
@@ -23,8 +26,3 @@ rename_users_automatically: true
 verify_client_digest: true
 verify_npticket_signature: true
 verify_npticket_expiry: true
-
-# run this once, then copy the key generated from console and paste it here
-# i should prob change this tbh
-session_secret_key: !binary |
-  

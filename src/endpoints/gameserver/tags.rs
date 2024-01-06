@@ -1,9 +1,13 @@
-use actix_web::Responder;
-
+use axum::{Router, routing::get};
 use strum::IntoEnumIterator;
 use strum_macros::{EnumIter, IntoStaticStr};
 
-use crate::responder::Xml;
+use crate::AppState;
+
+pub fn routes() -> Router<AppState> {
+    Router::new()
+        .route("/tags", get(tags))
+}
 
 // tags for levels
 // LBP1 only
@@ -88,10 +92,10 @@ enum Tags {
     Balancing,
 }
 
-pub async fn tags() -> impl Responder {
+async fn tags() -> String {
     let mut tags = vec![];
     for tag in Tags::iter() {
         tags.push("TAG_".to_string() + tag.into());
     }
-    Xml(tags.join(","))
+    tags.join(",")
 }

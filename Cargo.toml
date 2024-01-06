@@ -7,14 +7,24 @@ edition = "2021"
 opt-level = 3
 
 [dependencies]
-actix-web = { version = "4.3", default-features = false, features = ["macros", "compress-gzip"]}
-actix-web-lab = "0.19"
-actix-http = "3.3"
-actix-session = { version = "0.7", features = ["redis-actor-session"] }
-actix-xml = { git = "https://github.com/uhwot/actix-xml.git", rev = "d35c6e14", default-features = false }
+axum = "0.7"
+axum-extra = { version = "0.9", features = ["cookie"] }
+axum-serde = { version = "0.2.0", features = ["xml"] }
+tower = "0.4"
+tower-http = { version = "0.5", features = ["trace", "fs", "limit", "compression-deflate"] }
+tower-sessions = { version = "0.9", features = ["redis-store"] }
+http = "1.0"
+http-body = "1.0"
+http-body-util = "0.1"
 mime = "0.3"
+time = "0.3"
 
-sqlx = { version = "0.7", features = ["runtime-tokio", "tls-rustls", "postgres", "macros", "migrate", "uuid", "chrono", "bigdecimal"] }
+tokio = { version = "1.35", features = ["rt-multi-thread", "macros"] }
+tokio-util = "0.7"
+
+quick-xml = "0.31"
+
+sqlx = { version = "0.7", features = ["runtime-tokio-rustls", "postgres", "macros", "migrate", "uuid", "chrono", "bigdecimal"] }
 uuid = { version = "1.3", features = ["v4", "fast-rng", "serde"] }
 
 futures = "0.3"
@@ -22,8 +32,8 @@ futures = "0.3"
 # yes, i'm using an html template engine for xml :P
 maud = "0.25"
 
-log = "0.4"
-env_logger = "0.10"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 serde = { version = "1.0", features = ["derive"] }
 serde_yaml = "0.9"
@@ -34,7 +44,6 @@ sha1 = "0.10"
 openssl = "0.10"
 hex = "0.4"
 hex-literal = "0.4"
-base64 = "0.21"
 
 strum = "0.25"
 strum_macros = "0.25"
@@ -44,3 +53,4 @@ byteorder = "1.4"
 anyhow = "1.0"
 
 regex = "1.8"
+url = { version = "2.5.0", features = ["serde"] }

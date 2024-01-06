@@ -1,11 +1,11 @@
 use std::io::{Cursor, Seek, SeekFrom};
 
-use actix_web::web::Bytes;
 use anyhow::{bail, Context, Ok, Result};
+use axum::body::Bytes;
 use byteorder::{BigEndian, ReadBytesExt};
 use openssl::{hash::MessageDigest, sign::Verifier};
 
-use super::pub_key_store::PubKeyStore;
+use super::pub_key_store;
 use crate::{types::platform::Platform, utils::ticket_read::*};
 
 // useful links
@@ -69,10 +69,10 @@ impl NpTicket {
         })
     }
 
-    pub fn verify_signature(&self, pub_key_store: &PubKeyStore) -> Result<bool> {
+    pub fn verify_signature(&self) -> Result<bool> {
         let (digest_alg, pub_key) = match self.footer.key_id {
-            Platform::Psn => (MessageDigest::sha1(), &pub_key_store.psn),
-            Platform::Rpcn => (MessageDigest::sha224(), &pub_key_store.rpcn),
+            Platform::Psn => (MessageDigest::sha1(), pub_key_store::PSN.get().unwrap()),
+            Platform::Rpcn => (MessageDigest::sha224(), pub_key_store::RPCN.get().unwrap()),
         };
 
         let mut verifier = Verifier::new(digest_alg, pub_key)?;

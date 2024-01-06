@@ -1,97 +1,108 @@
 use std::fs;
 
-use actix_web::{
-    error,
-    web::{Bytes, Data, Path},
-    HttpResponse, Responder, Result,
+use axum::{
+    Router,
+    routing::{get, post},
+    extract::{Path, State},
+    response::{IntoResponse, Response},
+    http::{StatusCode, HeaderValue},
+    body::{Bytes, Body}
 };
-use log::debug;
+use tokio::fs::File;
+use tokio_util::io::ReaderStream;
+use tower_http::limit::RequestBodyLimitLayer;
+use tracing::debug;
 use maud::html as xml;
 use serde::Deserialize;
 use serde_with::serde_as;
 use sha1::{Digest, Sha1};
 
-use crate::{
-    responder::Xml,
-    types::Config,
-    utils::resource::{get_hash_path, str_to_hash},
-};
+use crate::{utils::resource::{get_hash_path, str_to_hash}, AppState, responders::Xml, extractors};
 
-pub async fn download(path: Path<String>, config: Data<Config>) -> Result<impl Responder> {
-    let hash = path.into_inner();
-    let hash = str_to_hash(&hash).map_err(|_| {
-        error::ErrorBadRequest(format!("Resource SHA1 hash is invalid: {hash}"))
-    })?;
-
-    let path = get_hash_path(&config.resource_dir, hash);
-
-    let file = fs::read(path).map_err(|e| {
-        debug!("Couldn't read resource file: {e}");
-        error::ErrorNotFound("")
-    })?;
-
-    Ok(HttpResponse::Ok()
-        .content_type(mime::APPLICATION_OCTET_STREAM)
-        .body(file))
+pub fn routes(resource_size_limit: u32) -> Router<AppState> {
+    Router::new()
+        .route("/r/:hash", get(download)).layer(RequestBodyLimitLayer::new(resource_size_limit as usize))
+        .route("/upload/:hash", post(upload))
+        .route("/filterResources", get(filter_resources))
+        .route("/showNotUploaded", get(filter_resources))
 }
 
-pub async fn upload(
-    payload: Bytes,
-    path: Path<String>,
-    config: Data<Config>,
-) -> Result<impl Responder> {
-    let hash = path.into_inner();
+async fn download(Path(hash): Path<String>, State(state): State<AppState>) -> Result<impl IntoResponse, Response> {
     let hash = str_to_hash(&hash).map_err(|_| {
-        error::ErrorBadRequest(format!("Resource SHA1 hash is invalid: {hash}"))
+        (StatusCode::BAD_REQUEST, format!("Resource SHA1 hash is invalid: {hash}")).into_response()
+    })?;
+
+    let path = get_hash_path(&state.config.resource_dir, hash);
+
+    let file = File::open(path).await.map_err(|e| {
+        debug!("Couldn't read resource file: {e}");
+        (StatusCode::NOT_FOUND, "Resource not found").into_response()
+    })?;
+
+    let stream = ReaderStream::new(file);
+    let body = Body::from_stream(stream);
+
+    let mut resp = Response::new(body);
+    resp.headers_mut().insert("Content-Type", HeaderValue::from_static(mime::APPLICATION_OCTET_STREAM.as_ref()));
+
+    Ok(resp)
+}
+
+async fn upload(
+    Path(hash): Path<String>,
+    State(state): State<AppState>,
+    payload: Bytes,
+) -> Result<impl IntoResponse, Response> {
+    let hash = str_to_hash(&hash).map_err(|_| {
+        (StatusCode::BAD_REQUEST, format!("Resource SHA1 hash is invalid: {hash}")).into_response()
     })?;
 
     let mut hasher = Sha1::new();
     hasher.update(&payload);
 
     if hash != hasher.finalize()[..] {
-        return Err(error::ErrorBadRequest("Actual resource hash doesn't match hash in request"));
+        return Err((StatusCode::BAD_REQUEST, "Actual resource hash doesn't match hash in request").into_response());
     }
 
     // TODO: add more checks n shit
 
-    let path = get_hash_path(&config.resource_dir, hash);
+    let path = get_hash_path(&state.config.resource_dir, hash);
 
     if path.exists() {
-        return Err(error::ErrorConflict("Resource is already uploaded"));
+        return Err((StatusCode::CONFLICT, "Resource is already uploaded").into_response());
     }
 
-    fs::create_dir_all(&config.resource_dir).map_err(|e| {
-        error::ErrorInternalServerError(format!("Couldn't create resource dir: {e}"))
+    fs::create_dir_all(&state.config.resource_dir).map_err(|e| {
+        (StatusCode::INTERNAL_SERVER_ERROR, format!("Couldn't create resource dir: {e}")).into_response()
     })?;
     fs::write(path, &payload).map_err(|e| {
-        error::ErrorInternalServerError(format!("Couldn't write to resource file: {e}"))
+        (StatusCode::INTERNAL_SERVER_ERROR, format!("Couldn't write to resource file: {e}")).into_response()
     })?;
 
-    Ok(HttpResponse::Ok())
+    Ok(StatusCode::OK)
 }
 
 #[serde_as]
 #[derive(Deserialize)]
-pub struct ResourceList {
+struct ResourceList {
     #[serde(default)]
     #[serde_as(as = "Vec<serde_with::hex::Hex>")]
     resource: Vec<[u8; 20]>,
 }
 
-pub async fn filter_resources(
-    payload: actix_xml::Xml<ResourceList>,
-    config: Data<Config>,
-) -> Result<impl Responder> {
+async fn filter_resources(
+    State(state): State<AppState>,
+    payload: extractors::Xml<ResourceList>,
+) -> impl IntoResponse {
     {
-        Ok(Xml(xml!(
+        Xml(xml!(
             resources {
                 @for hash in &payload.resource {
-                    @if !get_hash_path(&config.resource_dir, *hash).exists() {
+                    @if !get_hash_path(&state.config.resource_dir, *hash).exists() {
                         resource { (hex::encode(hash)) }
                     }
                 }
             }
-        )
-        .into_string()))
+        ))
     }
 }

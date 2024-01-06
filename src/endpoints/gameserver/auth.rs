@@ -1,74 +1,72 @@
-use std::{
-    sync::Arc,
-    time::{SystemTime, UNIX_EPOCH},
-};
+use std::time::{SystemTime, UNIX_EPOCH};
 
-use actix_session::Session;
-use actix_web::{
-    error,
-    web::{Bytes, Data},
-    HttpResponse, Responder, Result,
-};
+use axum::{extract::State, body::Bytes, response::{IntoResponse, Response}, http::StatusCode};
 use maud::html as xml;
-use sqlx::{types::BigDecimal, Pool, Postgres};
+use sqlx::types::BigDecimal;
+use tower_sessions::Session;
 use uuid::Uuid;
 
 use crate::{
-    responder::Xml,
-    types::{Config, GameVersion, NpTicket, Platform, PubKeyStore, SessionData},
+    responders::Xml,
+    types::{GameVersion, NpTicket, Platform, SessionData}, AppState,
 };
 
 pub async fn login(
-    pool: Data<Arc<Pool<Postgres>>>,
-    config: Data<Config>,
-    pub_key_store: Data<PubKeyStore>,
-    payload: Bytes,
+    State(state): State<AppState>,
     session: Session,
-) -> Result<impl Responder> {
-    let npticket = NpTicket::parse_from_bytes(payload).map_err(error::ErrorBadRequest)?;
+    payload: Bytes,
+) -> Result<impl IntoResponse, Response> {
+    let npticket = NpTicket::parse_from_bytes(payload).map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()).into_response())?;
 
-    if config.verify_npticket_expiry {
+    if state.config.verify_npticket_expiry {
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_millis();
         if npticket.body.expire_date as u128 <= now {
-            return Err(error::ErrorUnauthorized("NpTicket is expired"));
+            return Err((StatusCode::UNAUTHORIZED, "NpTicket is expired").into_response());
         }
     }
 
-    if config.verify_npticket_signature {
+    if state.config.verify_npticket_signature {
         let sig_verified = npticket
-            .verify_signature(&pub_key_store)
-            .map_err(error::ErrorBadRequest)?;
+            .verify_signature()
+            .map_err(|_| StatusCode::BAD_REQUEST.into_response())?;
 
         if !sig_verified {
-            return Err(error::ErrorUnauthorized(
+            return Err((
+                StatusCode::UNAUTHORIZED,
                 "NpTicket signature doesn't match data and/or key",
-            ));
+            ).into_response());
         }
     }
 
-    let session_data = get_session_data(pool, npticket, &config).await?;
+    let session_data = get_session_data(state, npticket).await?;
 
     let platform = session_data.platform as u8;
     let game_version = session_data.game_version as u8;
 
+    session.cycle_id().await.unwrap();
     session
         .insert("user_id", session_data.user_id.to_string())
+        .await
         .unwrap();
-    session.insert("online_id", session_data.online_id).unwrap();
-    session.insert("platform", platform).unwrap();
-    session.insert("game_version", game_version).unwrap();
+    session.insert("online_id", session_data.online_id).await.unwrap();
+    session.insert("platform", platform).await.unwrap();
+    session.insert("game_version", game_version).await.unwrap();
 
     Ok(Xml(xml! {
         loginResult {
-            // this is replaced in the session hack middleware
-            authTicket { "ass" }
+            authTicket { (format!("MM_AUTH={}", session.id().unwrap())) }
             lbpEnvVer { "sacklite" }
         }
-    }
-    .into_string()))
+    }))
+}
+
+pub async fn goodbye(session: Session) -> impl IntoResponse {
+    session.delete()
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())
 }
 
 struct UserData {
@@ -77,12 +75,11 @@ struct UserData {
 }
 
 async fn get_session_data(
-    pool: Data<Arc<Pool<Postgres>>>,
+    state: AppState,
     npticket: NpTicket,
-    config: &Data<Config>,
-) -> Result<SessionData> {
+) -> Result<SessionData, Response> {
     let game_version =
-        GameVersion::from_service_id(&npticket.body.service_id).map_err(error::ErrorBadRequest)?;
+        GameVersion::from_service_id(&npticket.body.service_id).map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()).into_response())?;
 
     let npticket_uid = BigDecimal::from(npticket.body.user_id);
 
@@ -93,7 +90,7 @@ async fn get_session_data(
                 "SELECT id, online_id FROM users WHERE psn_id = $1",
                 npticket_uid
             )
-            .fetch_optional(&***pool)
+            .fetch_optional(&state.pool)
             .await
         }
         Platform::Rpcn => {
@@ -102,18 +99,19 @@ async fn get_session_data(
                 "SELECT id, online_id FROM users WHERE rpcn_id = $1",
                 npticket_uid
             )
-            .fetch_optional(&***pool)
+            .fetch_optional(&state.pool)
             .await
         }
     }
-    .map_err(error::ErrorInternalServerError)?;
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())?;
 
     if let Some(user) = user {
         if user.online_id != npticket.body.online_id {
-            if !config.rename_users_automatically {
-                return Err(error::ErrorUnauthorized(
-                    "Online ID doesn't match with user on server",
-                ));
+            if !state.config.rename_users_automatically {
+                return Err((
+                    StatusCode::UNAUTHORIZED,
+                    "Online ID doesn't match with user on server"
+                ).into_response());
             }
 
             sqlx::query!(
@@ -121,23 +119,23 @@ async fn get_session_data(
                 npticket.body.online_id,
                 user.id
             )
-            .execute(&***pool)
+            .execute(&state.pool)
             .await
-            .map_err(error::ErrorInternalServerError)?;
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())?;
 
             match npticket.footer.key_id {
                 Platform::Psn => {
                     sqlx::query!("UPDATE users SET rpcn_id = NULL WHERE id = $1", user.id)
-                        .execute(&***pool)
+                        .execute(&state.pool)
                         .await
                 }
                 Platform::Rpcn => {
                     sqlx::query!("UPDATE users SET psn_id = NULL WHERE id = $1", user.id)
-                        .execute(&***pool)
+                        .execute(&state.pool)
                         .await
                 }
             }
-            .map_err(error::ErrorInternalServerError)?;
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())?;
         }
 
         return Ok(SessionData {
@@ -150,17 +148,17 @@ async fn get_session_data(
 
     // TODO: check if user with the same online id exists
 
-    if !config.create_user_on_connect {
-        return Err(error::ErrorUnauthorized("User doesn't exist"));
+    if !state.config.create_user_on_connect {
+        return Err((StatusCode::UNAUTHORIZED, "User doesn't exist").into_response());
     }
 
     let user_id = sqlx::query!(
         "INSERT INTO users (id, online_id) VALUES (gen_random_uuid(), $1) RETURNING id",
         npticket.body.online_id
     )
-    .fetch_one(&***pool)
+    .fetch_one(&state.pool)
     .await
-    .map_err(error::ErrorInternalServerError)?
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())?
     .id;
 
     match npticket.footer.key_id {
@@ -170,7 +168,7 @@ async fn get_session_data(
                 npticket_uid,
                 user_id
             )
-            .execute(&***pool)
+            .execute(&state.pool)
             .await
         }
         Platform::Rpcn => {
@@ -179,11 +177,11 @@ async fn get_session_data(
                 npticket_uid,
                 user_id
             )
-            .execute(&***pool)
+            .execute(&state.pool)
             .await
         }
     }
-    .map_err(error::ErrorInternalServerError)?;
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())?;
 
     Ok(SessionData {
         user_id,
@@ -191,9 +189,4 @@ async fn get_session_data(
         platform: npticket.footer.key_id,
         game_version,
     })
-}
-
-pub async fn goodbye(session: Session) -> impl Responder {
-    session.purge();
-    HttpResponse::Ok()
 }

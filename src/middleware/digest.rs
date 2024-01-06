@@ -1,33 +1,12 @@
-use actix_http::{
-    h1,
-    header::{HeaderName, HeaderValue, COOKIE},
-    StatusCode,
-};
-use actix_web::{
-    body::{BodySize, EitherBody, MessageBody},
-    dev::{self, ServiceResponse},
-    web::{Bytes, Data},
-    Error, HttpResponse,
-};
-use actix_web_lab::middleware::Next;
-
-use log::{debug, info};
+use axum::{extract::{Request, State}, middleware::Next, response::{Response, IntoResponse}, http::{StatusCode, HeaderValue}, body::{Body, Bytes}};
+use axum_extra::extract::CookieJar;
+use http_body_util::BodyExt;
 use sha1::{Digest, Sha1};
+use tracing::debug;
 
 use crate::types::Config;
 
-const EXEMPT_PATHS: [&str; 8] = [
-    "/login",
-    "/eula",
-    "/announce",
-    "/status",
-    "/farc_hashes",
-    "/t_conf",
-    "/network_settings.nws",
-    "/ChallengeConfig.xml",
-];
-
-fn calc_digest(path: &str, mm_auth: &str, body: &Bytes, digest_key: &str) -> String {
+fn calc_digest(path: &str, mm_auth: &str, body: Bytes, digest_key: &str) -> String {
     let mut sha1 = Sha1::new();
 
     sha1.update(body);
@@ -38,102 +17,87 @@ fn calc_digest(path: &str, mm_auth: &str, body: &Bytes, digest_key: &str) -> Str
     format!("{:x}", sha1.finalize())
 }
 
+/*
+    exempt paths:
+    /login
+    /eula
+    /announce
+    /status
+    /farc_hashes
+    /t_conf
+    /network_settings.nws
+    /ChallengeConfig.xml
+*/
 pub async fn verify_digest(
-    mut req: dev::ServiceRequest,
-    next: Next<impl MessageBody + 'static>,
-) -> Result<ServiceResponse<EitherBody<impl MessageBody>>, Error> {
-    let config = req.app_data::<Data<Config>>().unwrap().clone();
-
-    let path = req.path().to_owned();
-
-    let mut stripped_path = path.as_str();
-    if stripped_path.starts_with(&config.base_path) {
-        stripped_path = &stripped_path[config.base_path.len()..]
-    }
+    State(config): State<Config>,
+    req: Request,
+    next: Next,
+) -> Result<impl IntoResponse, Response> {
+    let full_path = config.base_path + req.uri().path();
 
     // game calculates the digest with or without the body depending on if it's a resource upload
-    let exclude_body = stripped_path.starts_with("/upload/");
+    let exclude_body = req.uri().path().starts_with("/upload/");
     let digest_header_key = match exclude_body {
         false => "X-Digest-A",
         true => "X-Digest-B",
     };
 
-    let body = match exclude_body {
-        true => Bytes::new(),
-        false => req.extract::<Bytes>().await.unwrap(),
+    let cookies = CookieJar::from_headers(req.headers());
+    let mm_auth = cookies.get("MM_AUTH").map_or("", |c| c.value());
+
+    let headers = req.headers().clone();
+    let client_digest = headers
+        .get(digest_header_key)
+        .ok_or_else(|| StatusCode::FORBIDDEN.into_response())?
+        .to_str()
+        .map_err(|_| StatusCode::FORBIDDEN.into_response())?;
+
+    let (req_digest, req) = match exclude_body {
+        true => (calc_digest(&full_path, mm_auth, Bytes::new(), &config.digest_key), req),
+        false => buffer_request_body(req, &full_path, mm_auth, &config.digest_key).await?,
     };
 
-    // had to do this stupid shit since actix-web percent-decodes cookies unlike LBP
-    let mut mm_auth = String::new();
-    if let Some(header) = req.headers().get(COOKIE) {
-        if let Ok(header_str) = header.to_str() {
-            if let Some(cookie_val) = header_str.strip_prefix("MM_AUTH=") {
-                mm_auth = cookie_val.to_owned();
-            }
-        }
+    match req_digest == client_digest {
+        true => Ok(next.run(req).await),
+        false => {
+            debug!("Digest is invalid, ignoring request");
+            debug!("digest: {req_digest}");
+            debug!("client digest: {client_digest}");
+            Err(StatusCode::FORBIDDEN.into_response())
+        },
     }
-
-    let req_digest = calc_digest(&path, &mm_auth, &body, &config.digest_key);
-
-    // the game doesn't start sending digests until after the announcement,
-    // so if the request is before that we accept it anyways
-    let mut digest_pass = !config.verify_client_digest || EXEMPT_PATHS.contains(&stripped_path);
-
-    if !digest_pass {
-        let client_digest = req.headers().get(digest_header_key);
-        match client_digest {
-            Some(cl_digest) => {
-                digest_pass = req_digest == cl_digest.to_str().unwrap();
-                if !digest_pass {
-                    info!("Digest is invalid, ignoring request");
-                    debug!("digest: {req_digest}");
-                    debug!("client digest: {cl_digest:?}");
-                }
-            }
-            None => info!("Digest is missing, ignoring request"),
-        }
-    }
-
-    if !exclude_body {
-        req.set_payload(bytes_to_payload(body));
-    }
-
-    if !digest_pass {
-        let (req, _pl) = req.into_parts();
-        let res = HttpResponse::new(StatusCode::FORBIDDEN).map_into_right_body();
-        return Ok(ServiceResponse::new(req, res));
-    }
-
-    let mut res = next.call(req).await?;
-
-    res.headers_mut().insert(
-        HeaderName::from_static("x-digest-b"),
-        HeaderValue::from_str(&req_digest).unwrap(),
-    );
-
-    // code stolen from here:
-    // https://github.com/chriswk/actix-middleware-etag/blob/fe10145fa730d9c45deb7e05c594ad5760b9761a/src/lib.rs#L103
-    let mut payload = Bytes::new();
-    let mut res = res.map_body(|_h, body| match body.size() {
-        BodySize::Sized(_size) => {
-            let bytes = body.try_into_bytes().unwrap_or_else(|_| Bytes::new());
-            payload = bytes.clone();
-            bytes.boxed()
-        }
-        _ => body.boxed(),
-    });
-
-    let resp_digest = calc_digest(&path, &mm_auth, &payload, &config.digest_key);
-    res.headers_mut().insert(
-        HeaderName::from_static("x-digest-a"),
-        HeaderValue::from_str(&resp_digest).unwrap(),
-    );
-
-    Ok(res.map_into_left_body())
 }
 
-fn bytes_to_payload(buf: Bytes) -> dev::Payload {
-    let (_, mut pl) = h1::Payload::create(true);
-    pl.unread_data(buf);
-    dev::Payload::from(pl)
+// https://github.com/tokio-rs/axum/blob/axum-v0.7.3/examples/consume-body-in-extractor-or-middleware/src/main.rs
+// the trick is to take the request apart, buffer the body, do what you need to do, then put
+// the request back together
+async fn buffer_request_body(request: Request, full_path: &str, mm_auth: &str, digest_key: &str) -> Result<(String, Request), Response> {
+    let (parts, body) = request.into_parts();
+
+    // this wont work if the body is an long running stream
+    let bytes = body
+        .collect()
+        .await
+        .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()).into_response())?
+        .to_bytes();
+
+    let digest = calc_digest(full_path, mm_auth, bytes.clone(), digest_key);
+
+    Ok((digest, Request::from_parts(parts, Body::from(bytes))))
+}
+
+pub async fn send_digest(
+    State(digest_key): State<String>,
+    req: Request,
+    next: Next,
+) -> Response {
+    let uri = req.uri().clone();
+    let cookies = CookieJar::from_headers(req.headers());
+    let mm_auth = cookies.get("MM_AUTH").map_or("", |c| c.value());
+
+    let mut resp = next.run(req).await;
+
+    let digest = calc_digest(uri.path(), mm_auth, Bytes::new(), &digest_key);
+    resp.headers_mut().insert("X-Digest-B", HeaderValue::from_str(&digest).unwrap());
+    resp
 }

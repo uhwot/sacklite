@@ -1,21 +1,17 @@
-use std::sync::Arc;
-
-use actix_web::{
-    error,
-    web::{Data, Path},
-    Responder, Result,
-};
+use axum::{routing::get, Router, http::StatusCode, response::{IntoResponse, Response}, extract::{State, Path}};
 use maud::html as xml;
-use sqlx::{Pool, Postgres};
 
-use crate::responder::Xml;
+use crate::{responders::Xml, AppState};
 
-pub async fn slot(
-    path: Path<(String, i64)>,
-    pool: Data<Arc<Pool<Postgres>>>,
-) -> Result<impl Responder> {
-    let (slot_type, id) = path.into_inner();
+pub fn routes() -> Router<AppState> {
+    Router::new()
+        .route("/s/:type/:id", get(slot))
+}
 
+async fn slot(
+    Path((_, id)): Path<(String, i64)>,
+    State(state): State<AppState>,
+) -> Result<impl IntoResponse, Response> {
     // TODO: add support for dev slots
 
     // https://stackoverflow.com/a/26727307
@@ -25,10 +21,10 @@ pub async fn slot(
         WHERE slots.id = $1",
         id
     )
-    .fetch_optional(&***pool)
+    .fetch_optional(&state.pool)
     .await
-    .map_err(error::ErrorInternalServerError)?
-    .ok_or(error::ErrorNotFound("Slot not found"))?;
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())?
+    .ok_or((StatusCode::NOT_FOUND, "Slot not found").into_response())?;
 
     Ok(Xml(xml!(
         slot type="user" {
@@ -81,5 +77,5 @@ pub async fn slot(
             lbp3CompletionCount { "0" }
             lbp3UniquePlayCount { "0" }
         }
-    ).into_string()))
+    )))
 }

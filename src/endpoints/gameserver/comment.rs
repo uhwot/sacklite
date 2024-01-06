@@ -1,31 +1,29 @@
-use std::sync::Arc;
-
-use actix_web::{
-    error,
-    web::{Data, Path, ReqData, Query},
-    HttpResponse, Responder, Result,
-};
+use axum::{Router, routing::{get, post}, extract::{Path, Query, State}, http::StatusCode, response::{IntoResponse, Response}, Extension};
 use futures::TryStreamExt;
 use maud::html as xml;
 use serde::Deserialize;
-use sqlx::{Pool, Postgres};
 
-use crate::{responder::Xml, types::SessionData};
+use crate::{responders::Xml, types::SessionData, AppState, extractors};
+
+pub fn routes() -> Router<AppState> {
+    Router::new()
+        .route("/userComments/:online_id", get(user_comments))
+        .route("/postUserComment/:online_id", post(post_user_comment))
+        .route("/deleteUserComment/:online_id", post(delete_user_comment))
+}
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct CommentListQuery {
+struct CommentListQuery {
     page_start: i64,
     page_size: i64,
 }
 
-pub async fn user_comments(
-    path: Path<String>,
+async fn user_comments(
+    Path(online_id): Path<String>,
     query: Query<CommentListQuery>,
-    pool: Data<Arc<Pool<Postgres>>>,
-) -> Result<impl Responder> {
-    let online_id = path.into_inner();
-
+    State(state): State<AppState>,
+) -> Result<impl IntoResponse, Response> {
     // what the fuck have i done
     let mut comments = sqlx::query!(
         "SELECT comm.id, comm.posted_at, comm.content, comm.deleted_by_mod,
@@ -42,11 +40,11 @@ pub async fn user_comments(
         query.page_size,
         query.page_start - 1
     )
-    .fetch(&***pool);
+    .fetch(&state.pool);
 
     Ok(Xml(xml!(
         comments {
-            @while let Some(comment) = comments.try_next().await.map_err(error::ErrorInternalServerError)? {
+            @while let Some(comment) = comments.try_next().await.map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())? {
                 comment {
                     id { (comment.id) }
                     npHandle { (comment.author_oid) }
@@ -68,27 +66,25 @@ pub async fn user_comments(
                 }
             }
         }
-    ).into_string()))
+    )))
 }
 
 #[derive(Deserialize)]
-pub struct PostCommentPayload {
+struct PostCommentPayload {
     message: String,
 }
 
-pub async fn post_user_comment(
-    path: Path<String>,
-    payload: actix_xml::Xml<PostCommentPayload>,
-    pool: Data<Arc<Pool<Postgres>>>,
-    session: ReqData<SessionData>,
-) -> Result<impl Responder> {
-    let online_id = path.into_inner();
-
+async fn post_user_comment(
+    Path(online_id): Path<String>,
+    State(state): State<AppState>,
+    session: Extension<SessionData>,
+    payload: extractors::Xml<PostCommentPayload>,
+) -> Result<impl IntoResponse, Response> {
     let user_id = sqlx::query!("SELECT id FROM users WHERE online_id = $1", online_id)
-        .fetch_optional(&***pool)
+        .fetch_optional(&state.pool)
         .await
-        .map_err(error::ErrorInternalServerError)?
-        .ok_or(error::ErrorNotFound("User not found"))?
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())?
+        .ok_or((StatusCode::NOT_FOUND, "User not found").into_response())?
         .id;
 
     sqlx::query!(
@@ -97,38 +93,38 @@ pub async fn post_user_comment(
         user_id,
         payload.message
     )
-    .execute(&***pool)
+    .execute(&state.pool)
     .await
-    .map_err(error::ErrorInternalServerError)?;
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())?;
 
-    Ok(HttpResponse::Ok())
+    Ok(StatusCode::OK)
 }
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct CommentDeleteQuery {
+struct CommentDeleteQuery {
     comment_id: i64,
 }
 
-pub async fn delete_user_comment(
+async fn delete_user_comment(
     query: Query<CommentDeleteQuery>,
-    pool: Data<Arc<Pool<Postgres>>>,
-    session: ReqData<SessionData>,
-) -> Result<impl Responder> {
+    State(state): State<AppState>,
+    session: Extension<SessionData>,
+) -> Result<impl IntoResponse, Response> {
     let rows = sqlx::query!(
         "UPDATE comments SET deleted_by = $1
         WHERE id = $2 AND deleted_by IS NULL AND deleted_by_mod = false AND (author = $1 OR target_user = $1)",
         session.user_id,
         query.comment_id
     )
-    .execute(&***pool)
+    .execute(&state.pool)
     .await
-    .map_err(error::ErrorInternalServerError)?
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())?
     .rows_affected();
 
     if rows == 0 {
-        return Err(error::ErrorUnauthorized("Comment not found, already deleted or not authorized to delete"))
+        return Err((StatusCode::UNAUTHORIZED, "Comment not found, already deleted or not authorized to delete").into_response())
     }
 
-    Ok(HttpResponse::Ok())
+    Ok(StatusCode::OK)
 }

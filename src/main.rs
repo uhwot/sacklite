@@ -1,111 +1,86 @@
-use std::sync::Arc;
+use std::{net::SocketAddr, time::Duration};
 
-use actix_session::{
-    config::{CookieContentSecurity, PersistentSession},
-    storage::RedisActorSessionStore,
-    SessionMiddleware,
-};
-use actix_web::{
-    cookie::{time::Duration, Key},
-    middleware::{Compress, Condition, Logger},
-    web::{self, Data, JsonConfig, PayloadConfig},
-    App, HttpServer,
-};
-use actix_web_lab::middleware::from_fn;
+use anyhow::Context;
+use axum::{Router, routing::get, middleware::from_fn};
+use sqlx::{postgres::PgPoolOptions, Pool, Postgres};
 
-use actix_xml::XmlConfig;
-
-use sqlx::postgres::PgPoolOptions;
-
-use base64::{engine::general_purpose, Engine as _};
-use env_logger::Builder;
-use log::{info, warn};
+use tokio::net::TcpListener;
+use tower::ServiceBuilder;
+use tower_http::trace::TraceLayer;
+use tower_sessions::{SessionManagerLayer, RedisStore, fred::{clients::RedisPool, types::RedisConfig, interfaces::ClientLike}, Expiry};
+use tracing::{warn, info};
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+use types::Config;
 
 mod endpoints;
 mod middleware;
-mod responder;
+mod extractors;
+mod responders;
 mod types;
 mod utils;
 
-#[actix_web::main]
-async fn main() -> std::io::Result<()> {
+#[derive(Clone)]
+struct AppState {
+    config: Config,
+    pool: Pool<Postgres>,
+}
+
+#[tokio::main]
+async fn main() -> Result<(), anyhow::Error> {
     let config = types::Config::parse_from_file("config.yml");
 
-    Builder::new().parse_filters(&config.log_level).init();
-
-    info!("Listening on {}:{}", config.listen_addr, config.listen_port);
-
-    let listen_addr = config.listen_addr.clone();
-    let listen_port = config.listen_port;
+    tracing_subscriber::registry()
+        .with(
+            tracing_subscriber::EnvFilter::new(&config.log_level),
+        )
+        .with(tracing_subscriber::fmt::layer())
+        .init();
 
     let digest_key_present = !config.digest_key.is_empty();
     if !digest_key_present {
         warn!("Server digest key is empty. Digests will not be verified and LBP games will probably not accept server responses.");
     }
 
-    let session_key = parse_session_key(&config.session_secret_key);
-
     let pool = PgPoolOptions::new()
+        .max_connections(5)
+        .acquire_timeout(Duration::from_secs(3))
         .connect(&config.db_conn)
         .await
-        .expect("Couldn't init database connection pool");
+        .context("can't connect to database")?;
 
-    HttpServer::new(move || {
-        App::new()
-            .app_data(Data::new(config.clone()))
-            .app_data(Data::new(Arc::new(pool.clone())))
-            .service(
-                web::scope(&config.base_path)
-                    .configure(endpoints::gameserver::cfg)
-                    .app_data(Data::new(types::PubKeyStore::new().unwrap()))
-                    .wrap(Condition::new(
-                        digest_key_present,
-                        from_fn(middleware::verify_digest),
-                    ))
-                    .wrap(
-                        SessionMiddleware::builder(
-                            RedisActorSessionStore::new(&config.redis_conn),
-                            session_key.clone(),
-                        )
-                        .cookie_name("MM_AUTH".to_string())
-                        .cookie_content_security(CookieContentSecurity::Signed)
-                        .session_lifecycle(
-                            PersistentSession::default().session_ttl(Duration::minutes(30)),
-                        )
-                        .build(),
-                    )
-                    .wrap(from_fn(middleware::session_hack))
-                    // needed since content types are inconsistent because of fucking course they are (ノಠ益ಠ)ノ彡┻━┻
-                    .app_data(XmlConfig::default().content_type(|_| true))
-                    // oh my fucking god i hate this
-                    .app_data(JsonConfig::default().content_type(|_| true))
-                    .app_data(PayloadConfig::new(config.payload_limit as usize)),
-            )
-            .route(
-                "/autodiscover",
-                web::get().to(endpoints::autodiscover::autodiscover),
-            )
-            .wrap(Compress::default())
-            .wrap(Logger::default())
-    })
-    .bind((listen_addr, listen_port))?
-    .run()
-    .await
-}
+    let state = AppState {
+        config: config.clone(),
+        pool,
+    };
 
-fn parse_session_key(key: &str) -> Key {
-    let base64 = general_purpose::STANDARD;
-    let key = base64
-        .decode(key)
-        .expect("Session secret key isn't valid base64");
-    match key.as_slice() {
-        [] => {
-            info!("Session secret key is empty, generating random one...");
-            let key = Key::generate();
-            info!("Key: {}", base64.encode(key.master()));
-            info!("Copy this into your config.yml file!");
-            key
-        }
-        key => Key::from(key),
-    }
+    types::pub_key_store::init_keys();
+
+    let pool = RedisPool::new(RedisConfig::default(), None, None, None, 6).unwrap();
+
+    #[allow(clippy::let_underscore_future)]
+    let _ = pool.connect();
+    pool.wait_for_connect().await.context("can't connect to Redis server")?;
+
+    let session_store = RedisStore::new(pool);
+    let session_service = ServiceBuilder::new()
+        .layer(from_fn(middleware::remove_set_cookie))
+        .layer(
+            SessionManagerLayer::new(session_store)
+                .with_name("MM_AUTH")
+                .with_expiry(Expiry::OnInactivity(time::Duration::minutes(30)))
+        );
+
+    let app = Router::new()
+        .nest(&config.base_path, endpoints::gameserver::routes(&config).await)
+        .layer(session_service)
+        .route("/autodiscover", get(endpoints::autodiscover))
+        .with_state(state)
+        .layer(TraceLayer::new_for_http());
+
+    let addr = config.listen_addr.parse().context("can't parse listen address")?;
+    let addr = SocketAddr::new(addr, config.listen_port);
+    let listener = TcpListener::bind(addr).await.context("Couldn't bind address")?;
+
+    info!("Listening on {}:{}", config.listen_addr, config.listen_port);
+    axum::serve(listener, app).await.context("can't start axum server")
 }

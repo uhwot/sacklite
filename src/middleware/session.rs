@@ -1,84 +1,40 @@
-use actix_http::{header::SET_COOKIE, HttpMessage, StatusCode};
-use actix_session::SessionExt;
-use actix_web::{
-    body::{BodySize, EitherBody, MessageBody},
-    dev::{self, ServiceResponse},
-    web::Bytes,
-    Error, HttpResponse,
-};
-use actix_web_lab::middleware::Next;
+use axum::{extract::Request, middleware::Next, response::{Response, IntoResponse}, http::StatusCode};
+use tower_sessions::Session;
 use uuid::Uuid;
 
 use crate::types::SessionData;
 
-// TODO: refactor without using actix-session
-
-pub async fn session_hack(
-    req: dev::ServiceRequest,
-    next: Next<impl MessageBody + 'static>,
-) -> Result<ServiceResponse<impl MessageBody>, Error> {
-    let path = req.path().to_owned();
-    let mut res = next.call(req).await?;
-
-    if !path.ends_with("/login") {
-        res.headers_mut().remove(SET_COOKIE);
-        return Ok(res.map_into_boxed_body());
-    }
-
-    let auth_ticket = match res.headers().get(SET_COOKIE) {
-        Some(c) => c.clone(),
-        None => return Ok(res.map_into_boxed_body()),
-    };
-    let auth_ticket = auth_ticket.to_str().unwrap().split_once(';').unwrap().0;
-
-    res.headers_mut().remove(SET_COOKIE);
-
-    // code still stolen from here:
-    // https://github.com/chriswk/actix-middleware-etag/blob/fe10145fa730d9c45deb7e05c594ad5760b9761a/src/lib.rs#L103
-    let res = res.map_body(|_h, body| match body.size() {
-        BodySize::Sized(_size) => {
-            let body = body.try_into_bytes().unwrap_or_else(|_| Bytes::new());
-            let body = std::str::from_utf8(&body).unwrap();
-            let body = body.replacen("ass", auth_ticket, 1);
-            Bytes::copy_from_slice(body.as_bytes()).boxed()
-        }
-        _ => body.boxed(),
-    });
-
-    Ok(res)
+pub async fn remove_set_cookie(
+    req: Request,
+    next: Next,
+) -> Response {
+    let mut resp = next.run(req).await;
+    resp.headers_mut().remove("Set-Cookie");
+    resp
 }
 
 pub async fn parse_session(
-    req: dev::ServiceRequest,
-    next: Next<impl MessageBody + 'static>,
-) -> Result<ServiceResponse<EitherBody<impl MessageBody>>, Error> {
-    if req.path().ends_with("/login") {
-        let res = next.call(req).await?;
-        return Ok(res.map_into_left_body());
-    }
+    mut req: Request,
+    next: Next,
+) -> Result<impl IntoResponse, Response> {
+    let session: &Session = req.extensions().get().ok_or_else(|| StatusCode::FORBIDDEN.into_response())?;
 
-    let session = req.get_session();
-
-    let user_id: Option<String> = session.get("user_id").unwrap();
+    let user_id: Option<String> = session.get("user_id").await.unwrap();
     if user_id.is_none() {
-        let (req, _pl) = req.into_parts();
-        let res = HttpResponse::new(StatusCode::FORBIDDEN).map_into_right_body();
-        return Ok(ServiceResponse::new(req, res));
+        return Err(StatusCode::FORBIDDEN.into_response());
     }
 
-    let platform: u8 = session.get("platform").unwrap().unwrap();
-    let game_version: u8 = session.get("game_version").unwrap().unwrap();
+    let platform: u8 = session.get("platform").await.unwrap().unwrap();
+    let game_version: u8 = session.get("game_version").await.unwrap().unwrap();
 
     let session_data = SessionData {
         user_id: Uuid::parse_str(&user_id.unwrap()).unwrap(),
-        online_id: session.get("online_id").unwrap().unwrap(),
+        online_id: session.get("online_id").await.unwrap().unwrap(),
         platform: platform.try_into().unwrap(),
         game_version: game_version.try_into().unwrap(),
     };
 
     req.extensions_mut().insert(session_data);
 
-    let res = next.call(req).await?;
-
-    Ok(res.map_into_left_body())
+    Ok(next.run(req).await)
 }

@@ -1,26 +1,26 @@
-use std::sync::Arc;
-
-use actix_web::{
-    error,
-    web::{Data, ReqData, Path},
-    Responder, Result, HttpResponse,
-};
+use axum::{Router, routing::post, extract::{State, Path}, response::{IntoResponse, Response}, Extension, http::StatusCode};
 use maud::html as xml;
 use serde::Deserialize;
 use serde_with::{serde_as, BoolFromInt, DisplayFromStr, StringWithSeparator, formats::CommaSeparator};
-use sqlx::{Pool, Postgres};
 
 use crate::{
-    responder::Xml,
-    types::{Config, SessionData, ResourceRef},
+    responders::Xml,
+    types::{SessionData, ResourceRef}, AppState, extractors,
 };
 
 use super::Location;
 
+pub fn routes() -> Router<AppState> {
+    Router::new()
+        .route("/startPublish", post(start_publish))
+        .route("/publish", post(publish))
+        .route("/unpublish/:id", post(unpublish))
+}
+
 #[serde_as]
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct SlotPublishPayload {
+struct SlotPublishPayload {
     id: Option<i64>,
     name: String,
     description: String,
@@ -51,51 +51,48 @@ pub struct SlotPublishPayload {
     vita_cross_control_required: bool,
 }
 
-pub async fn start_publish(
-    payload: actix_xml::Xml<SlotPublishPayload>,
-    config: Data<Config>,
-) -> Result<impl Responder> {
+async fn start_publish(
+    State(state): State<AppState>,
+    payload: extractors::Xml<SlotPublishPayload>,
+) -> Result<impl IntoResponse, Response> {
     let mut resources: Vec<ResourceRef> = payload.resource.iter().map(|r| ResourceRef::Hash(*r)).collect();
     resources.push(payload.icon.clone());
 
     Ok(Xml(xml!(
         slot type="user" {
             @for resource in resources {
-                @if !resource.exists(&config.resource_dir) {
+                @if !resource.exists(&state.config.resource_dir) {
                     resource { (resource.to_string()) }
                 }
             }
         }
-    ).into_string()))
+    )))
 }
 
-pub async fn publish(
-    pl: actix_xml::Xml<SlotPublishPayload>,
-    pool: Data<Arc<Pool<Postgres>>>,
-    config: Data<Config>,
-    session: ReqData<SessionData>,
-) -> Result<impl Responder> {
+async fn publish(
+    State(state): State<AppState>,
+    session: Extension<SessionData>,
+    pl: extractors::Xml<SlotPublishPayload>,
+) -> Result<impl IntoResponse, Response> {
     for num_players in [pl.min_players, pl.max_players] {
         if ![1, 2, 3, 4].contains(&num_players) {
-            return Err(error::ErrorBadRequest("Invalid player num"));
+            return Err((StatusCode::BAD_REQUEST, "Invalid player num").into_response());
         }
     }
     if pl.max_players < pl.min_players {
-        return Err(error::ErrorBadRequest(
-            "Max players greater than min players",
-        ));
+        return Err((StatusCode::BAD_REQUEST, "Max players greater than min players").into_response());
     }
 
     if pl.id.is_none() {
         let num_slots = sqlx::query!("SELECT COUNT(*) AS num_slots FROM slots WHERE author = $1", session.user_id)
-        .fetch_one(&***pool)
+        .fetch_one(&state.pool)
         .await
-        .map_err(error::ErrorInternalServerError)?
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())?
         .num_slots
         .unwrap_or_default();
 
-        if num_slots >= config.slot_limit.into() {
-            return Err(error::ErrorUnauthorized("User has reached slot limit"));
+        if num_slots >= state.config.slot_limit.into() {
+            return Err((StatusCode::UNAUTHORIZED, "User has reached slot limit").into_response());
         }
     }
 
@@ -103,8 +100,8 @@ pub async fn publish(
     resources.push(pl.icon.clone());
     resources.push(ResourceRef::Hash(pl.root_level));
     for res in resources {
-        if !res.exists(&config.resource_dir) {
-            return Err(error::ErrorBadRequest("One or more resources don't exist"));
+        if !res.exists(&state.config.resource_dir) {
+            return Err((StatusCode::BAD_REQUEST, "One or more resources don't exist").into_response());
         }
     }
 
@@ -139,9 +136,9 @@ pub async fn publish(
             pl.move_required,
             pl.vita_cross_control_required
         )
-        .fetch_one(&***pool)
+        .fetch_one(&state.pool)
         .await
-        .map_err(error::ErrorInternalServerError)?
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())?
         .id,
         Some(id) => {sqlx::query!(
             "UPDATE slots
@@ -170,9 +167,9 @@ pub async fn publish(
             id,
             session.user_id
         )
-        .execute(&***pool)
+        .execute(&state.pool)
         .await
-        .map_err(error::ErrorInternalServerError)?;
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())?;
         id},
     };
 
@@ -180,29 +177,27 @@ pub async fn publish(
         slot type="user" {
             id { (slot_id) }
         }
-    ).into_string()))
+    )))
 }
 
-pub async fn unpublish(
-    path: Path<i64>,
-    pool: Data<Arc<Pool<Postgres>>>,
-    session: ReqData<SessionData>,
-) -> Result<impl Responder> {
-    let id = path.into_inner();
-
+async fn unpublish(
+    Path(id): Path<i64>,
+    State(state): State<AppState>,
+    session: Extension<SessionData>,
+) -> Result<impl IntoResponse, Response> {
     let rows = sqlx::query!(
         "DELETE FROM slots WHERE id = $1 AND author = $2",
         id,
         session.user_id
     )
-    .execute(&***pool)
+    .execute(&state.pool)
     .await
-    .map_err(error::ErrorInternalServerError)?
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())?
     .rows_affected();
 
     if rows == 0 {
-        return Err(error::ErrorUnauthorized("Slot not found or not authorized to delete"));
+        return Err((StatusCode::UNAUTHORIZED, "Slot not found or not authorized to delete").into_response());
     }
 
-    Ok(HttpResponse::Ok())
+    Ok(StatusCode::OK)
 }

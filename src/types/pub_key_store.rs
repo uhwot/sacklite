@@ -1,3 +1,5 @@
+use std::sync::OnceLock;
+
 use anyhow::{Ok, Result};
 use openssl::bn::BigNum;
 use openssl::ec::*;
@@ -21,6 +23,18 @@ const RPCN_PARAMS: KeyParams = KeyParams {
     y: &hex!("d81c42b0abdf6c42191a31e31f93342f8f033bd529c2c57fdb5a0a7d"),
 };
 
+pub static PSN: OnceLock<PKey<Public>> = OnceLock::new();
+pub static RPCN: OnceLock<PKey<Public>> = OnceLock::new();
+
+pub fn init_keys() {
+    PSN.get_or_init(|| {
+        PSN_PARAMS.to_public_key().unwrap()
+    });
+    RPCN.get_or_init(|| {
+        RPCN_PARAMS.to_public_key().unwrap()
+    });
+}
+
 #[derive(Debug)]
 struct KeyParams<'a> {
     curve: Nid,
@@ -37,20 +51,5 @@ impl KeyParams<'_> {
         let ec_key = EcKey::from_public_key_affine_coordinates(&group, &x, &y)?;
 
         Ok(PKey::from_ec_key(ec_key)?)
-    }
-}
-
-#[derive(Debug)]
-pub struct PubKeyStore {
-    pub psn: PKey<Public>,
-    pub rpcn: PKey<Public>,
-}
-
-impl PubKeyStore {
-    pub fn new() -> Result<Self> {
-        Ok(Self {
-            psn: PSN_PARAMS.to_public_key()?,
-            rpcn: RPCN_PARAMS.to_public_key()?,
-        })
     }
 }

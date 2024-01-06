@@ -1,6 +1,7 @@
 use std::fs::File;
 
 use serde::Deserialize;
+use url::Url;
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct Config {
@@ -13,11 +14,14 @@ pub struct Config {
     pub redis_conn: String,
     pub log_level: String,
 
+    pub server_desc: String,
+    pub banner_image_url: Option<Url>,
+
     pub eula: String,
     pub announcement: String,
 
     pub resource_dir: String,
-    pub payload_limit: u32,
+    pub resource_size_limit: u32,
     pub slot_limit: u32,
 
     pub create_user_on_connect: bool,
@@ -26,7 +30,6 @@ pub struct Config {
     pub verify_client_digest: bool,
     pub verify_npticket_signature: bool,
     pub verify_npticket_expiry: bool,
-    pub session_secret_key: String,
 }
 
 impl Config {

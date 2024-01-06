@@ -1,2 +1,4 @@
-pub mod autodiscover;
+mod autodiscover;
 pub mod gameserver;
+
+pub use autodiscover::autodiscover;

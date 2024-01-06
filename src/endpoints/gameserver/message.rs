@@ -1,15 +1,17 @@
-use crate::types::Config;
-use actix_web::web::Data;
-use actix_web::{HttpResponse, Responder};
+use axum::{Router, extract::State, routing::get};
 
-pub async fn eula(config: Data<Config>) -> String {
-    config.eula.clone()
+use crate::AppState;
+
+pub fn routes() -> Router<AppState> {
+    Router::new()
+        .route("/eula", get(eula))
+        .route("/announce", get(announce))
 }
 
-pub async fn announce(config: Data<Config>) -> String {
-    config.announcement.clone()
+async fn eula(State(state): State<AppState>) -> String {
+    state.config.eula.clone()
 }
 
-pub async fn notification() -> impl Responder {
-    HttpResponse::Ok()
+async fn announce(State(state): State<AppState>) -> String {
+    state.config.announcement.clone()
 }
