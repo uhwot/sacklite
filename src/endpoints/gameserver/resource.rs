@@ -21,8 +21,8 @@ use crate::{utils::resource::{get_hash_path, str_to_hash}, AppState, responders:
 
 pub fn routes(resource_size_limit: u32) -> Router<AppState> {
     Router::new()
-        .route("/r/:hash", get(download)).layer(RequestBodyLimitLayer::new(resource_size_limit as usize))
-        .route("/upload/:hash", post(upload))
+        .route("/upload/:hash", post(upload)).layer(RequestBodyLimitLayer::new(resource_size_limit as usize))
+        .route("/r/:hash", get(download))
         .route("/filterResources", get(filter_resources))
         .route("/showNotUploaded", get(filter_resources))
 }
