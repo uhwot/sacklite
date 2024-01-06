@@ -15,9 +15,8 @@ mod user;
 mod slot_search;
 mod slot;
 
-pub async fn routes(config: &Config) -> Router<AppState> {
+async fn with_auth_and_digest(config: &Config) -> Router<AppState> {
     let mut router = Router::new()
-        // auth + digest
         .merge(enter_level::routes())
         .merge(tags::routes())
         .merge(user::routes())
@@ -25,34 +24,46 @@ pub async fn routes(config: &Config) -> Router<AppState> {
         .merge(comment::routes())
         .merge(slot::routes())
         .merge(slot_search::routes())
-        .merge(publish::routes());
+        .merge(publish::routes())
+        .layer(from_fn(middleware::parse_session));
 
     if !config.digest_key.is_empty() && config.verify_client_digest {
-        router = router.layer(from_fn_with_state(config.clone(), middleware::verify_digest))
+        router = router.layer(from_fn_with_state(
+            (config.digest_key.clone(), config.base_path.clone()),
+            middleware::verify_digest
+        ))
     }
+    router
+}
 
-    router = router
-        // auth
+async fn with_auth() -> Router<AppState> {
+    Router::new()
         .merge(message::routes())
         .route_service("/network_settings.nws", ServeFile::new("network_settings.nws"))
         .route("/goodbye", post(auth::goodbye))
         .layer(from_fn(middleware::parse_session))
-        // public
-        .route("/login", post(auth::login))
-        .route("/status", get(status));
+}
 
-    if !config.digest_key.is_empty() {
-        router = router.layer(from_fn_with_state(config.digest_key.clone(), middleware::send_digest))
-    }
-
+pub async fn routes(config: &Config) -> Router<AppState> {
     let predicate = SizeAbove::new(1024)
         .and(ContentType::const_new(mime::TEXT_XML.as_ref()));
 
-    router = router
+    let mut router = Router::new()
+        .merge(with_auth_and_digest(config).await)
+        .merge(with_auth().await)
+        .route("/login", post(auth::login))
+        .route("/status", get(status))
         .layer(
             CompressionLayer::new()
                 .compress_when(predicate)
         );
+
+    if !config.digest_key.is_empty() {
+        router = router.layer(from_fn_with_state(
+            (config.digest_key.clone(), config.base_path.clone()),
+            middleware::send_digest
+        ))
+    }
 
     router
 }
