@@ -3,7 +3,7 @@ use axum_extra::extract::Query;
 use maud::html as xml;
 use serde::Deserialize;
 
-use crate::{responders::Xml, types::SessionData, AppState};
+use crate::{extractors::Xml, types::SessionData, AppState};
 
 pub fn routes() -> Router<AppState> {
     Router::new()

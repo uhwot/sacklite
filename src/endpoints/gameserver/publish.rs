@@ -4,7 +4,7 @@ use serde::Deserialize;
 use serde_with::{serde_as, BoolFromInt, DisplayFromStr, StringWithSeparator, formats::CommaSeparator};
 
 use crate::{
-    responders::Xml,
+    extractors::Xml,
     types::{SessionData, ResourceRef}, AppState, extractors,
 };
 

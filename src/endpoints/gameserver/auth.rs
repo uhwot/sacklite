@@ -7,7 +7,7 @@ use tower_sessions::Session;
 use uuid::Uuid;
 
 use crate::{
-    responders::Xml,
+    extractors::Xml,
     types::{GameVersion, NpTicket, Platform, SessionData}, AppState,
 };
 

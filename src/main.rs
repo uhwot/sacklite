@@ -15,7 +15,6 @@ use types::Config;
 mod endpoints;
 mod middleware;
 mod extractors;
-mod responders;
 mod types;
 mod utils;
 

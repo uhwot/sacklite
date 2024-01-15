@@ -17,7 +17,7 @@ use serde::Deserialize;
 use serde_with::serde_as;
 use sha1::{Digest, Sha1};
 
-use crate::{utils::resource::{get_hash_path, str_to_hash}, AppState, responders::Xml, extractors};
+use crate::{utils::resource::{get_hash_path, str_to_hash}, AppState, extractors::Xml, extractors};
 
 pub fn routes(resource_size_limit: u32) -> Router<AppState> {
     Router::new()

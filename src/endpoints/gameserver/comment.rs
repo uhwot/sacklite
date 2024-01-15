@@ -4,7 +4,7 @@ use futures::TryStreamExt;
 use maud::html as xml;
 use serde::Deserialize;
 
-use crate::{responders::Xml, types::SessionData, AppState, extractors};
+use crate::{extractors::Xml, types::SessionData, AppState};
 
 pub fn routes() -> Router<AppState> {
     Router::new()
@@ -79,7 +79,7 @@ async fn post_user_comment(
     Path(online_id): Path<String>,
     State(state): State<AppState>,
     session: Extension<SessionData>,
-    payload: extractors::Xml<PostCommentPayload>,
+    payload: Xml<PostCommentPayload>,
 ) -> Result<impl IntoResponse, Response> {
     let user_id = sqlx::query!("SELECT id FROM users WHERE online_id = $1", online_id)
         .fetch_optional(&state.pool)

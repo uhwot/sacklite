@@ -12,7 +12,7 @@ use maud::html as xml;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    responders::Xml,
+    extractors::Xml,
     types::{GameVersion, SessionData, ResourceRef},
     utils::{resource::get_hash_path, serde::double_option_err},
     AppState,
@@ -187,7 +187,7 @@ struct Slot {
 async fn update_user(
     State(state): State<AppState>,
     session: Extension<SessionData>,
-    payload: extractors::Xml<UpdateUserPayload>,
+    payload: Xml<UpdateUserPayload>,
 ) -> Result<impl IntoResponse, Response> {
     if let Some(Some(icon)) = &payload.icon {
         if !icon.exists(&state.config.resource_dir) {

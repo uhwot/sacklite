@@ -2,8 +2,11 @@ use axum::{
     async_trait,
     extract::{FromRequest, Request},
 };
+use axum::body::Body;
+use axum::response::IntoResponse;
 use axum_serde::Rejection;
-use http::HeaderValue;
+use http::{header, HeaderValue, Response};
+use maud::Markup;
 use quick_xml::DeError;
 
 // mostly shamelessly stolen from:
@@ -28,6 +31,21 @@ where
         axum_serde::Xml::<T>::from_request(req, state)
             .await
             .map(|v| Self(v.0))
+    }
+}
+
+// We implement `IntoResponse` for our extractor so it can be used as a response
+impl IntoResponse for Xml<Markup>
+{
+    fn into_response(self) -> Response<Body> {
+        (
+            [(
+                header::CONTENT_TYPE,
+                HeaderValue::from_static(mime::TEXT_XML.as_ref()),
+            )],
+            self.0.into_string(),
+        )
+            .into_response()
     }
 }
 

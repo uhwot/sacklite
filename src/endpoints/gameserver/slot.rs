@@ -1,7 +1,7 @@
 use axum::{routing::get, Router, http::StatusCode, response::{IntoResponse, Response}, extract::{State, Path}};
 use maud::html as xml;
 
-use crate::{responders::Xml, AppState};
+use crate::{extractors::Xml, AppState};
 
 pub fn routes() -> Router<AppState> {
     Router::new()
