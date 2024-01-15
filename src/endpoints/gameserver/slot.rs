@@ -16,9 +16,13 @@ async fn slot(
 
     // https://stackoverflow.com/a/26727307
     let slot = sqlx::query!(
-        "SELECT slots.*, author.online_id as author_oid
-        FROM slots JOIN users author ON slots.author = author.id
-        WHERE slots.id = $1",
+        "SELECT slots.*, author.online_id as author_oid,
+        COUNT(DISTINCT comments.id) AS comment_count
+        FROM slots
+        JOIN users author ON slots.author = author.id
+        LEFT JOIN comments ON slots.id = comments.target_slot
+        WHERE slots.id = $1
+        GROUP BY slots.id, author_oid",
         id
     )
     .fetch_optional(&state.pool)
@@ -57,7 +61,7 @@ async fn slot(
             yourlbp1PlayCount { "0" }
             yourlbp2PlayCount { "0" }
             reviewCount { "0" }
-            commentCount { "0" }
+            commentCount { (slot.comment_count.unwrap_or_default()) }
             photoCount { "0" }
             authorPhotoCount { "0" }
             labels {}

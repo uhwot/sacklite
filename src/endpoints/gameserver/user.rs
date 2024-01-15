@@ -109,7 +109,7 @@ async fn user(
             pins {
                 // https://stackoverflow.com/a/61052611
                 @let pins: String = user.profile_pins.iter().map(|&pin| pin.to_string() + ",").collect();
-                (pins[..pins.len() - 1])
+                (pins.strip_suffix(",").unwrap_or_default())
             }
             staffChallengeGoldCount { "0" }
             staffChallengeSilverCount { "0" }

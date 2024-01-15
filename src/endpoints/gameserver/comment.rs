@@ -8,6 +8,9 @@ use crate::{extractors::Xml, types::SessionData, AppState};
 
 pub fn routes() -> Router<AppState> {
     Router::new()
+        .route("/comments/:slot_type/:slot_id", get(slot_comments))
+        .route("/postComment/:slot_type/:slot_id", post(post_slot_comment))
+        .route("/deleteComment/:slot_type/:slot_id", post(delete_slot_comment))
         .route("/userComments/:online_id", get(user_comments))
         .route("/postUserComment/:online_id", post(post_user_comment))
         .route("/deleteUserComment/:online_id", post(delete_user_comment))
@@ -18,6 +21,56 @@ pub fn routes() -> Router<AppState> {
 struct CommentListQuery {
     page_start: i64,
     page_size: i64,
+}
+
+async fn slot_comments(
+    // TODO: use slot type
+    Path((_, slot_id)): Path<(String, i64)>,
+    query: Query<CommentListQuery>,
+    State(state): State<AppState>,
+) -> Result<impl IntoResponse, Response> {
+    // what the fuck have i done
+    let mut comments = sqlx::query!(
+        "SELECT comm.id, comm.posted_at, comm.content, comm.deleted_by_mod,
+        author.online_id AS author_oid,
+        deleter.online_id AS \"deleter_oid?\"
+        FROM comments comm
+        JOIN users author ON comm.author = author.id
+        LEFT JOIN users AS deleter ON comm.deleted_by = deleter.id
+        WHERE target_slot = $1
+        ORDER BY comm.posted_at DESC
+        LIMIT $2 OFFSET $3",
+        slot_id,
+        query.page_size,
+        query.page_start - 1
+    )
+        .fetch(&state.pool);
+
+    Ok(Xml(xml!(
+        comments {
+            @while let Some(comment) = comments.try_next().await.map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())? {
+                comment {
+                    id { (comment.id) }
+                    npHandle { (comment.author_oid) }
+                    timestamp { (comment.posted_at.timestamp_millis()) }
+                    @if comment.deleted_by_mod {
+                        deleted { "true" }
+                        deletedBy { "moderator" }
+                        deleteType { "moderator" }
+                    } @else if let Some(deleter_oid) = comment.deleter_oid {
+                        deleted { "true" }
+                        deletedBy { (deleter_oid) }
+                        deleteType { "user" }
+                    } @else {
+                        message { (comment.content) }
+                    }
+                    thumbsup { "0" } // TODO: fix this once ratings are implemented
+                    thumbsdown { "0" }
+                    yourthumb { "0" }
+                }
+            }
+        }
+    )))
 }
 
 async fn user_comments(
@@ -75,6 +128,32 @@ struct PostCommentPayload {
     message: String,
 }
 
+async fn post_slot_comment(
+    // TODO: use slot type
+    Path((_, slot_id)): Path<(String, i64)>,
+    State(state): State<AppState>,
+    session: Extension<SessionData>,
+    payload: Xml<PostCommentPayload>,
+) -> Result<impl IntoResponse, Response> {
+    sqlx::query!("SELECT id FROM slots WHERE id = $1", slot_id)
+        .fetch_optional(&state.pool)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())?
+        .ok_or((StatusCode::NOT_FOUND, "Slot not found").into_response())?;
+
+    sqlx::query!(
+        "INSERT INTO comments (author, target_slot, content) VALUES ($1, $2, $3)",
+        session.user_id,
+        slot_id,
+        payload.message
+    )
+        .execute(&state.pool)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())?;
+
+    Ok(StatusCode::OK)
+}
+
 async fn post_user_comment(
     Path(online_id): Path<String>,
     State(state): State<AppState>,
@@ -105,6 +184,32 @@ async fn post_user_comment(
 #[serde(rename_all = "camelCase")]
 struct CommentDeleteQuery {
     comment_id: i64,
+}
+
+async fn delete_slot_comment(
+    query: Query<CommentDeleteQuery>,
+    State(state): State<AppState>,
+    session: Extension<SessionData>,
+) -> Result<impl IntoResponse, Response> {
+    let rows = sqlx::query!(
+        "UPDATE comments SET deleted_by = $1
+        FROM slots
+        WHERE comments.target_slot = slots.id
+        AND comments.id = $2 AND deleted_by IS NULL AND deleted_by_mod = false
+        AND (comments.author = $1 OR slots.author = $1)",
+        session.user_id,
+        query.comment_id
+    )
+        .execute(&state.pool)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())?
+        .rows_affected();
+
+    if rows == 0 {
+        return Err((StatusCode::UNAUTHORIZED, "Comment not found, already deleted or not authorized to delete").into_response())
+    }
+
+    Ok(StatusCode::OK)
 }
 
 async fn delete_user_comment(
