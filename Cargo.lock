@@ -328,8 +328,10 @@ checksum = "7f2c685bad3eb3d45a01354cedb7d5faa66194d1d58ba6e267a8de788f79db38"
 dependencies = [
  "android-tzdata",
  "iana-time-zone",
+ "js-sys",
  "num-traits",
  "serde",
+ "wasm-bindgen",
  "windows-targets 0.48.5",
 ]
 
@@ -1737,6 +1739,7 @@ dependencies = [
  "axum-extra",
  "axum-serde",
  "byteorder",
+ "chrono",
  "futures",
  "hex",
  "hex-literal",

@@ -1,5 +1,5 @@
 use axum::{Router, http::StatusCode, routing::{get, post}, middleware::{from_fn_with_state, from_fn}};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use tower_http::{services::ServeFile, compression::{CompressionLayer, predicate::SizeAbove, Predicate}};
 
 use crate::{AppState, middleware, types::Config, utils::predicate::ContentType};
@@ -72,8 +72,15 @@ async fn status() -> StatusCode {
     StatusCode::OK
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Debug, Deserialize)]
 struct Location {
     x: u16,
     y: u16,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+enum SlotType {
+    User,
+    Developer,
 }

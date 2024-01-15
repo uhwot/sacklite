@@ -26,6 +26,7 @@ quick-xml = "0.31"
 
 sqlx = { version = "0.7", features = ["runtime-tokio-rustls", "postgres", "macros", "migrate", "uuid", "chrono", "bigdecimal"] }
 uuid = { version = "1.3", features = ["v4", "fast-rng", "serde"] }
+chrono = "0.4"
 
 futures = "0.3"
 
