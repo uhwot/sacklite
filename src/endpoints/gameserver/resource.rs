@@ -17,7 +17,7 @@ use serde::Deserialize;
 use serde_with::serde_as;
 use sha1::{Digest, Sha1};
 
-use crate::{utils::resource::{get_hash_path, str_to_hash}, AppState, extractors::Xml, extractors};
+use crate::{utils::resource::{get_hash_path, str_to_hash}, AppState, extractors::Xml};
 
 pub fn routes(resource_size_limit: u32) -> Router<AppState> {
     Router::new()
@@ -92,7 +92,7 @@ struct ResourceList {
 
 async fn filter_resources(
     State(state): State<AppState>,
-    payload: extractors::Xml<ResourceList>,
+    payload: Xml<ResourceList>,
 ) -> impl IntoResponse {
     {
         Xml(xml!(

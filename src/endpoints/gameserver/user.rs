@@ -16,7 +16,7 @@ use crate::{
     types::{GameVersion, SessionData, ResourceRef},
     utils::{resource::get_hash_path, serde::double_option_err},
     AppState,
-    extractors::{Json, self},
+    extractors::Json,
 };
 
 use super::Location;

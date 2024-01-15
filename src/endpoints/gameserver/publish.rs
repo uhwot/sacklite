@@ -5,7 +5,7 @@ use serde_with::{serde_as, BoolFromInt, DisplayFromStr, StringWithSeparator, for
 
 use crate::{
     extractors::Xml,
-    types::{SessionData, ResourceRef}, AppState, extractors,
+    types::{SessionData, ResourceRef}, AppState,
 };
 
 use super::Location;
@@ -53,7 +53,7 @@ struct SlotPublishPayload {
 
 async fn start_publish(
     State(state): State<AppState>,
-    payload: extractors::Xml<SlotPublishPayload>,
+    payload: Xml<SlotPublishPayload>,
 ) -> Result<impl IntoResponse, Response> {
     let mut resources: Vec<ResourceRef> = payload.resource.iter().map(|r| ResourceRef::Hash(*r)).collect();
     resources.push(payload.icon.clone());
@@ -72,7 +72,7 @@ async fn start_publish(
 async fn publish(
     State(state): State<AppState>,
     session: Extension<SessionData>,
-    pl: extractors::Xml<SlotPublishPayload>,
+    pl: Xml<SlotPublishPayload>,
 ) -> Result<impl IntoResponse, Response> {
     for num_players in [pl.min_players, pl.max_players] {
         if ![1, 2, 3, 4].contains(&num_players) {

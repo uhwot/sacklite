@@ -26,7 +26,7 @@ struct AppState {
 
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
-    let config = types::Config::parse_from_file("config.yml");
+    let config = Config::parse_from_file("config.yml");
 
     tracing_subscriber::registry()
         .with(
