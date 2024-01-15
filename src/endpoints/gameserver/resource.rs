@@ -23,8 +23,8 @@ pub fn routes(resource_size_limit: u32) -> Router<AppState> {
     Router::new()
         .route("/upload/:hash", post(upload)).layer(RequestBodyLimitLayer::new(resource_size_limit as usize))
         .route("/r/:hash", get(download))
-        .route("/filterResources", get(filter_resources))
-        .route("/showNotUploaded", get(filter_resources))
+        .route("/filterResources", post(filter_resources))
+        .route("/showNotUploaded", post(filter_resources))
 }
 
 async fn download(Path(hash): Path<String>, State(state): State<AppState>) -> Result<impl IntoResponse, Response> {
