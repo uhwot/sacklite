@@ -178,7 +178,7 @@ async fn post_comment(
                 .fetch_optional(&state.pool)
                 .await
                 .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())?
-                .ok_or((StatusCode::NOT_FOUND, "Slot not found").into_response())?;
+                .ok_or_else(|| (StatusCode::NOT_FOUND, "Slot not found").into_response())?;
             None
         },
         CommentTarget::User(ref username) => Some(
@@ -186,7 +186,7 @@ async fn post_comment(
                 .fetch_optional(&state.pool)
                 .await
                 .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())?
-                .ok_or((StatusCode::NOT_FOUND, "User not found").into_response())?
+                .ok_or_else(|| (StatusCode::NOT_FOUND, "User not found").into_response())?
                 .id
             )
     };
@@ -232,7 +232,7 @@ async fn delete_comment(
         .fetch_optional(&state.pool)
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())?
-        .ok_or((StatusCode::NOT_FOUND, "Comment not found").into_response())?;
+        .ok_or_else(|| (StatusCode::NOT_FOUND, "Comment not found").into_response())?;
 
     let target = if target_refs.slot.unwrap() {
         Slot(SlotType::User, 0)

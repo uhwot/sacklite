@@ -2,6 +2,7 @@ use axum::{Router, routing::post, extract::{State, Path}, response::{IntoRespons
 use maud::html as xml;
 use serde::Deserialize;
 use serde_with::{serde_as, BoolFromInt, DisplayFromStr, StringWithSeparator, formats::CommaSeparator};
+use uuid::Uuid;
 
 use crate::{
     extractors::Xml,
@@ -69,6 +70,30 @@ async fn start_publish(
     )))
 }
 
+async fn check_slot_author(
+    slot_id: i64,
+    user_id: Uuid,
+    state: &AppState,
+) -> Result<(), Response> {
+    let is_author = sqlx::query!(
+        "SELECT author = $2 AS is_author FROM slots WHERE id = $1",
+        slot_id,
+        user_id,
+    )
+        .fetch_optional(&state.pool)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())?
+        .ok_or_else(|| (StatusCode::NOT_FOUND, "Slot not found").into_response())?
+        .is_author
+        .unwrap();
+
+    if !is_author {
+        return Err((StatusCode::UNAUTHORIZED, "Cannot modify another user's slot").into_response())
+    }
+
+    Ok(())
+}
+
 async fn publish(
     State(state): State<AppState>,
     session: Extension<SessionData>,
@@ -83,17 +108,20 @@ async fn publish(
         return Err((StatusCode::BAD_REQUEST, "Max players greater than min players").into_response());
     }
 
-    if pl.id.is_none() {
-        let num_slots = sqlx::query!("SELECT COUNT(*) AS num_slots FROM slots WHERE author = $1", session.user_id)
-        .fetch_one(&state.pool)
-        .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())?
-        .num_slots
-        .unwrap_or_default();
+    match pl.id {
+        None => {
+            let num_slots = sqlx::query!("SELECT COUNT(*) AS num_slots FROM slots WHERE author = $1", session.user_id)
+                .fetch_one(&state.pool)
+                .await
+                .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())?
+                .num_slots
+                .unwrap_or_default();
 
-        if num_slots >= state.config.slot_limit.into() {
-            return Err((StatusCode::UNAUTHORIZED, "User has reached slot limit").into_response());
-        }
+            if num_slots >= state.config.slot_limit.into() {
+                return Err((StatusCode::UNAUTHORIZED, "User has reached slot limit").into_response());
+            }
+        },
+        Some(id) => check_slot_author(id, session.user_id, &state).await?,
     }
 
     let mut resources: Vec<ResourceRef> = pl.resource.iter().map(|r| ResourceRef::Hash(*r)).collect();
@@ -146,7 +174,7 @@ async fn publish(
                 initially_locked=$9, is_sub_level=$10, is_lbp1_only=$11, shareable=$12, level_type=$13,
                 min_players=$14, max_players=$15, move_required=$16, vita_cc_required=$17,
                 updated_at=CURRENT_TIMESTAMP
-            WHERE id = $18 AND author = $19",
+            WHERE id = $18",
             pl.name,
             pl.description,
             pl.icon.to_string(),
@@ -165,7 +193,6 @@ async fn publish(
             pl.move_required,
             pl.vita_cross_control_required,
             id,
-            session.user_id
         )
         .execute(&state.pool)
         .await
@@ -185,19 +212,15 @@ async fn unpublish(
     State(state): State<AppState>,
     session: Extension<SessionData>,
 ) -> Result<impl IntoResponse, Response> {
-    let rows = sqlx::query!(
-        "DELETE FROM slots WHERE id = $1 AND author = $2",
-        id,
-        session.user_id
-    )
-    .execute(&state.pool)
-    .await
-    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())?
-    .rows_affected();
+    check_slot_author(id, session.user_id, &state).await?;
 
-    if rows == 0 {
-        return Err((StatusCode::UNAUTHORIZED, "Slot not found or not authorized to delete").into_response());
-    }
+    sqlx::query!(
+        "DELETE FROM slots WHERE id = $1",
+        id,
+    )
+        .execute(&state.pool)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())?;
 
     Ok(StatusCode::OK)
 }

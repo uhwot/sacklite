@@ -28,7 +28,7 @@ async fn slots_by(
         .fetch_optional(&state.pool)
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())?
-        .ok_or((StatusCode::NOT_FOUND, "User not found").into_response())?
+        .ok_or_else(|| (StatusCode::NOT_FOUND, "User not found").into_response())?
         .id;
 
     // TODO: use game_filter_type param

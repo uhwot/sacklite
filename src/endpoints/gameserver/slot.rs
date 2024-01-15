@@ -25,10 +25,10 @@ async fn slot(
         GROUP BY slots.id, author_oid",
         id
     )
-    .fetch_optional(&state.pool)
-    .await
-    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())?
-    .ok_or((StatusCode::NOT_FOUND, "Slot not found").into_response())?;
+        .fetch_optional(&state.pool)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())?
+        .ok_or_else(|| (StatusCode::NOT_FOUND, "Slot not found").into_response())?;
 
     Ok(Xml(xml!(
         slot type="user" {
