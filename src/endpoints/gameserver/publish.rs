@@ -147,36 +147,53 @@ async fn publish(
         .await
         .map_err(db_error)?
         .id,
-        Some(id) => {sqlx::query!(
-            "UPDATE slots
-            SET name=$1, description=$2, icon=$3, gamever=$4, root_level=$5, resources=$6, location_x=$7, location_y=$8,
-                initially_locked=$9, is_sub_level=$10, is_lbp1_only=$11, shareable=$12, level_type=$13,
-                min_players=$14, max_players=$15, move_required=$16, vita_cc_required=$17,
-                updated_at=CURRENT_TIMESTAMP
-            WHERE id = $18",
-            pl.name,
-            pl.description,
-            pl.icon.to_string(),
-            session.game_version as i16,
-            hex::encode(pl.root_level),
-            res_array.as_slice(),
-            pl.location.x as i32,
-            pl.location.y as i32,
-            pl.initially_locked,
-            pl.is_sub_level,
-            pl.is_lbp1_only,
-            pl.shareable,
-            pl.leveltype,
-            pl.min_players as i16,
-            pl.max_players as i16,
-            pl.move_required,
-            pl.vita_cross_control_required,
-            id,
-        )
-        .execute(&state.pool)
-        .await
-        .map_err(db_error)?;
-        id},
+        Some(id) => {
+            let root_level = hex::encode(pl.root_level);
+            let query = sqlx::query!(
+                "SELECT root_level != $2 AS root_lvl_changed, gamever
+                FROM slots WHERE id = $1",
+                id,
+                root_level
+            )
+                .fetch_one(&state.pool)
+                .await
+                .map_err(db_error)?;
+
+            sqlx::query!(
+                "UPDATE slots
+                SET name=$1, description=$2, icon=$3, gamever=$4, root_level=$5, resources=$6, location_x=$7, location_y=$8,
+                    initially_locked=$9, is_sub_level=$10, is_lbp1_only=$11, shareable=$12, level_type=$13,
+                    min_players=$14, max_players=$15, move_required=$16, vita_cc_required=$17,
+                    updated_at=CURRENT_TIMESTAMP
+                WHERE id = $18",
+                pl.name,
+                pl.description,
+                pl.icon.to_string(),
+                match query.root_lvl_changed.unwrap() {
+                    true => session.game_version as i16,
+                    false => query.gamever
+                },
+                root_level,
+                res_array.as_slice(),
+                pl.location.x as i32,
+                pl.location.y as i32,
+                pl.initially_locked,
+                pl.is_sub_level,
+                pl.is_lbp1_only,
+                pl.shareable,
+                pl.leveltype,
+                pl.min_players as i16,
+                pl.max_players as i16,
+                pl.move_required,
+                pl.vita_cross_control_required,
+                id,
+            )
+                .execute(&state.pool)
+                .await
+                .map_err(db_error)?;
+
+            id
+        },
     };
 
     Ok(Xml(xml!(
