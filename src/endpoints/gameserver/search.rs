@@ -109,6 +109,9 @@ async fn slot_search(
     }
     sql.push(" WHERE gamever <= ");
     sql.push_bind(session.game_version as i16);
+    sql.push(" AND (is_sub_level = FALSE OR author = ");
+    sql.push_bind(session.user_id);
+    sql.push(')');
     if let Some(user_id) = user_id {
         sql.push(" AND author = ");
         sql.push_bind(user_id);
