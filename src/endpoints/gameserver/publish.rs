@@ -85,11 +85,15 @@ async fn publish(
 
     match pl.id {
         None => {
-            let num_slots = sqlx::query!("SELECT COUNT(*) AS num_slots FROM slots WHERE author = $1", session.user_id)
+            let num_slots = sqlx::query!(
+                "SELECT COUNT(*) FROM slots WHERE author = $1 and gamever = $2",
+                session.user_id,
+                session.game_version as i16,
+            )
                 .fetch_one(&state.pool)
                 .await
                 .map_err(db_error)?
-                .num_slots
+                .count
                 .unwrap_or_default();
 
             if num_slots >= state.config.slot_limit.into() {
