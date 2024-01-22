@@ -6,7 +6,7 @@ use serde::Deserialize;
 use sqlx::QueryBuilder;
 use sqlx::types::chrono::NaiveDateTime;
 
-use crate::{extractors::Xml, types::SessionData, AppState};
+use crate::{extractors::Xml, types::SessionData, AppState, utils::db::{db_error, check_slot, get_id_from_username}};
 use crate::endpoints::gameserver::comment::CommentTarget::{Slot, User};
 use crate::endpoints::gameserver::SlotType;
 
@@ -106,7 +106,7 @@ async fn comments(
 
     Ok(Xml(xml!(
         comments {
-            @while let Some(comment) = comments.try_next().await.map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())? {
+            @while let Some(comment) = comments.try_next().await.map_err(db_error)? {
                 comment {
                     id { (comment.id) }
                     npHandle { (comment.author_oid) }
@@ -174,21 +174,10 @@ async fn post_comment(
 ) -> Result<impl IntoResponse, Response> {
     let user_id = match target {
         CommentTarget::Slot(_, id) => {
-            sqlx::query!("SELECT id FROM slots WHERE id = $1", id)
-                .fetch_optional(&state.pool)
-                .await
-                .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())?
-                .ok_or_else(|| (StatusCode::NOT_FOUND, "Slot not found").into_response())?;
+            check_slot(id, &state).await?;
             None
         },
-        CommentTarget::User(ref username) => Some(
-            sqlx::query!("SELECT id FROM users WHERE online_id = $1", username)
-                .fetch_optional(&state.pool)
-                .await
-                .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())?
-                .ok_or_else(|| (StatusCode::NOT_FOUND, "User not found").into_response())?
-                .id
-            )
+        CommentTarget::User(ref username) => Some(get_id_from_username(username, &state).await?)
     };
 
     match target {
@@ -207,7 +196,7 @@ async fn post_comment(
     }
         .execute(&state.pool)
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())?;
+        .map_err(db_error)?;
 
     Ok(StatusCode::OK)
 }
@@ -231,7 +220,7 @@ async fn delete_comment(
     )
         .fetch_optional(&state.pool)
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())?
+        .map_err(db_error)?
         .ok_or_else(|| (StatusCode::NOT_FOUND, "Comment not found").into_response())?;
 
     let target = if target_refs.slot.unwrap() {
@@ -249,7 +238,7 @@ async fn delete_comment(
     )
         .fetch_one(&state.pool)
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())?
+        .map_err(db_error)?
         .is_deleted
         .unwrap();
 
@@ -267,7 +256,7 @@ async fn delete_comment(
         )
             .fetch_one(&state.pool)
             .await
-            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())?
+            .map_err(db_error)?
             .is_allowed
             .unwrap(),
         CommentTarget::User(_) => sqlx::query!(
@@ -278,7 +267,7 @@ async fn delete_comment(
         )
             .fetch_one(&state.pool)
             .await
-            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())?
+            .map_err(db_error)?
             .is_allowed
             .unwrap(),
     };
@@ -296,7 +285,7 @@ async fn delete_comment(
     )
         .execute(&state.pool)
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())?;
+        .map_err(db_error)?;
 
     Ok(StatusCode::OK)
 }

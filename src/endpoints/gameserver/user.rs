@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     extractors::Xml,
     types::{GameVersion, SessionData, ResourceRef},
-    utils::{resource::get_hash_path, serde::double_option_err},
+    utils::{resource::get_hash_path, serde::double_option_err, db::db_error},
     AppState,
     extractors::Json,
 };
@@ -28,6 +28,8 @@ pub fn routes() -> Router<AppState> {
         .route("/updateUser", post(update_user))
         .route("/get_my_pins", get(get_my_pins))
         .route("/update_my_pins", post(update_my_pins))
+        .route("/privacySettings", get(privacy_settings))
+        .route("/privacySettings", post(privacy_settings))
 }
 
 async fn user(
@@ -41,19 +43,21 @@ async fn user(
         COUNT(DISTINCT comments.id) AS comment_count,
         COUNT(DISTINCT lbp1slot.id) AS lbp1slot_count,
         COUNT(DISTINCT lbp2slot.id) AS lbp2slot_count,
-        COUNT(DISTINCT lbp3slot.id) AS lbp3slot_count
+        COUNT(DISTINCT lbp3slot.id) AS lbp3slot_count,
+        COUNT(DISTINCT favourite_slots.slot_id) AS favourite_slot_count
         FROM users
         LEFT JOIN comments ON users.id = comments.target_user
         LEFT JOIN slots lbp1slot ON users.id = lbp1slot.author AND lbp1slot.gamever = 0
         LEFT JOIN slots lbp2slot ON users.id = lbp2slot.author AND lbp2slot.gamever = 1
         LEFT JOIN slots lbp3slot ON users.id = lbp3slot.author AND lbp3slot.gamever = 2
+        LEFT JOIN favourite_slots ON users.id = favourite_slots.user_id
         WHERE online_id = $1
         GROUP BY users.id",
         online_id
     )
         .fetch_optional(&state.pool)
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())?
+        .map_err(db_error)?
         .ok_or_else(|| (StatusCode::NOT_FOUND, "User not found").into_response())?;
 
     let slot_limit = state.config.slot_limit as i64;
@@ -103,13 +107,13 @@ async fn user(
                 x { (user.location_x) }
                 y { (user.location_y) }
             }
-            favouriteSlotCount { "0" }
+            favouriteSlotCount { (user.favourite_slot_count.unwrap_or_default()) }
             favouriteUserCount { "0" }
             lolcatftwCount { "0" } // this is the queue, why the fuck would you do this mm
             pins {
                 // https://stackoverflow.com/a/61052611
                 @let pins: String = user.profile_pins.iter().map(|&pin| pin.to_string() + ",").collect();
-                (pins.strip_suffix(",").unwrap_or_default())
+                (pins.strip_suffix(',').unwrap_or_default())
             }
             staffChallengeGoldCount { "0" }
             staffChallengeSilverCount { "0" }
@@ -142,7 +146,7 @@ async fn users(
 
     Ok(Xml(xml!(
         users {
-            @while let Some(user) = users.try_next().await.map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())? {
+            @while let Some(user) = users.try_next().await.map_err(db_error)? {
                 user type="user" {
                     npHandle icon=(user.icon.as_deref().unwrap_or_default()) { (user.online_id) }
                 }
@@ -222,19 +226,19 @@ async fn update_user(
         )
         .execute(&state.pool)
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())?;
+        .map_err(db_error)?;
     }
     if let Some(bio) = &payload.biography {
         sqlx::query!("UPDATE users SET biography = $1 WHERE id = $2", bio, uid)
             .execute(&state.pool)
             .await
-            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())?;
+            .map_err(db_error)?;
     }
     if let Some(icon) = &payload.icon {
         sqlx::query!("UPDATE users SET icon = $1 WHERE id = $2", icon.as_ref().map(|r| r.to_string()), uid)
             .execute(&state.pool)
             .await
-            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())?;
+            .map_err(db_error)?;
     }
     if let Some(planets) = &payload.planets {
         let planets = planets.as_ref().map(|r| r.to_string());
@@ -248,7 +252,7 @@ async fn update_user(
                 )
                 .execute(&state.pool)
                 .await
-                .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())?;
+                .map_err(db_error)?;
             }
             GameVersion::Lbp3 => {
                 sqlx::query!(
@@ -258,7 +262,7 @@ async fn update_user(
                 )
                 .execute(&state.pool)
                 .await
-                .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())?;
+                .map_err(db_error)?;
             }
         }
     }
@@ -270,7 +274,7 @@ async fn update_user(
         )
         .execute(&state.pool)
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())?;
+        .map_err(db_error)?;
     }
     if let Some(yay2) = &payload.yay2 {
         sqlx::query!(
@@ -280,7 +284,7 @@ async fn update_user(
         )
         .execute(&state.pool)
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())?;
+        .map_err(db_error)?;
     }
     if let Some(meh2) = &payload.meh2 {
         sqlx::query!(
@@ -290,7 +294,7 @@ async fn update_user(
         )
         .execute(&state.pool)
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())?;
+        .map_err(db_error)?;
     }
     if let Some(boo2) = &payload.boo2 {
         sqlx::query!(
@@ -300,7 +304,7 @@ async fn update_user(
         )
         .execute(&state.pool)
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())?;
+        .map_err(db_error)?;
     }
     if let Some(slots) = &payload.slots {
         for slot in &slots.slot {
@@ -313,7 +317,7 @@ async fn update_user(
             )
             .execute(&state.pool)
             .await
-            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())?;
+            .map_err(db_error)?;
         }
     }
 
@@ -339,7 +343,7 @@ async fn get_my_pins(
     )
     .fetch_optional(&state.pool)
     .await
-    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())?
+    .map_err(db_error)?
     .ok_or_else(|| (StatusCode::NOT_FOUND, "User not found").into_response())?;
 
     Ok(Json(UserPinsPayload {
@@ -368,7 +372,7 @@ async fn update_my_pins(
         )
         .execute(&state.pool)
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())?;
+        .map_err(db_error)?;
     }
     if let Some(progress) = &payload.progress {
         sqlx::query!(
@@ -378,7 +382,7 @@ async fn update_my_pins(
         )
         .execute(&state.pool)
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())?;
+        .map_err(db_error)?;
     }
     if let Some(pins) = &payload.profile_pins {
         sqlx::query!(
@@ -388,8 +392,17 @@ async fn update_my_pins(
         )
         .execute(&state.pool)
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())?;
+        .map_err(db_error)?;
     }
 
     Ok(payload)
+}
+
+async fn privacy_settings() -> impl IntoResponse {
+    Xml(xml!(
+        privacySettings {
+            levelVisibility { "all" }
+            profileVisibility { "all" }
+        }
+    ))
 }

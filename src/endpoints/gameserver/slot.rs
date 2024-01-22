@@ -1,7 +1,7 @@
 use axum::{routing::get, Router, http::StatusCode, response::{IntoResponse, Response}, extract::{State, Path}};
 use maud::html as xml;
 
-use crate::{extractors::Xml, AppState};
+use crate::{extractors::Xml, AppState, utils::db::db_error};
 
 pub fn routes() -> Router<AppState> {
     Router::new()
@@ -17,17 +17,19 @@ async fn slot(
     // https://stackoverflow.com/a/26727307
     let slot = sqlx::query!(
         "SELECT slots.*, author.online_id as author_oid,
-        COUNT(DISTINCT comments.id) AS comment_count
+        COUNT(DISTINCT comments.id) AS comment_count,
+        COUNT(DISTINCT hearts.user_id) AS heart_count
         FROM slots
         JOIN users author ON slots.author = author.id
         LEFT JOIN comments ON slots.id = comments.target_slot
+        LEFT JOIN favourite_slots AS hearts ON slots.id = hearts.slot_id
         WHERE slots.id = $1
         GROUP BY slots.id, author_oid",
         id
     )
         .fetch_optional(&state.pool)
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())?
+        .map_err(db_error)?
         .ok_or_else(|| (StatusCode::NOT_FOUND, "Slot not found").into_response())?;
 
     Ok(Xml(xml!(
@@ -49,7 +51,7 @@ async fn slot(
             shareable { (slot.shareable) }
             minPlayers { (slot.min_players) }
             maxPlayers { (slot.max_players) }
-            heartCount { "0" }
+            heartCount { (slot.heart_count.unwrap_or_default()) }
             thumbsup { "0" }
             thumbsdown { "0" }
             averageRating { "0.0" } // lbp1

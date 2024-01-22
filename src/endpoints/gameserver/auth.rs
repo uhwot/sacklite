@@ -8,7 +8,7 @@ use uuid::Uuid;
 
 use crate::{
     extractors::Xml,
-    types::{GameVersion, NpTicket, Platform, SessionData}, AppState,
+    types::{GameVersion, NpTicket, Platform, SessionData}, AppState, utils::db::db_error,
 };
 
 pub async fn login(
@@ -103,7 +103,7 @@ async fn get_session_data(
             .await
         }
     }
-    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())?;
+    .map_err(db_error)?;
 
     if let Some(user) = user {
         if user.online_id != npticket.body.online_id {
@@ -121,7 +121,7 @@ async fn get_session_data(
             )
             .execute(&state.pool)
             .await
-            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())?;
+            .map_err(db_error)?;
 
             match npticket.footer.key_id {
                 Platform::Psn => {
@@ -135,7 +135,7 @@ async fn get_session_data(
                         .await
                 }
             }
-            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())?;
+            .map_err(db_error)?;
         }
 
         return Ok(SessionData {
@@ -158,7 +158,7 @@ async fn get_session_data(
     )
     .fetch_one(&state.pool)
     .await
-    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())?
+    .map_err(db_error)?
     .id;
 
     match npticket.footer.key_id {
@@ -181,7 +181,7 @@ async fn get_session_data(
             .await
         }
     }
-    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())?;
+    .map_err(db_error)?;
 
     Ok(SessionData {
         user_id,

@@ -1,12 +1,11 @@
 use axum::{Router, routing::post, extract::{State, Path}, response::{IntoResponse, Response}, Extension, http::StatusCode};
 use maud::html as xml;
 use serde::Deserialize;
-use serde_with::{serde_as, BoolFromInt, DisplayFromStr, StringWithSeparator, formats::CommaSeparator};
-use uuid::Uuid;
+use serde_with::{serde_as, BoolFromInt, DisplayFromStr};
 
 use crate::{
     extractors::Xml,
-    types::{SessionData, ResourceRef}, AppState,
+    types::{SessionData, ResourceRef}, AppState, utils::db::{db_error, check_slot_author},
 };
 
 use super::Location;
@@ -44,8 +43,8 @@ struct SlotPublishPayload {
     leveltype: String,
     min_players: u8,
     max_players: u8,
-    #[serde_as(as = "Option<StringWithSeparator::<CommaSeparator, String>>")]
-    labels: Option<Vec<String>>,
+    //#[serde_as(as = "Option<StringWithSeparator::<CommaSeparator, String>>")]
+    //TODO: labels: Option<Vec<String>>,
     #[serde(default)]
     move_required: bool,
     #[serde(default)]
@@ -70,30 +69,6 @@ async fn start_publish(
     )))
 }
 
-async fn check_slot_author(
-    slot_id: i64,
-    user_id: Uuid,
-    state: &AppState,
-) -> Result<(), Response> {
-    let is_author = sqlx::query!(
-        "SELECT author = $2 AS is_author FROM slots WHERE id = $1",
-        slot_id,
-        user_id,
-    )
-        .fetch_optional(&state.pool)
-        .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())?
-        .ok_or_else(|| (StatusCode::NOT_FOUND, "Slot not found").into_response())?
-        .is_author
-        .unwrap();
-
-    if !is_author {
-        return Err((StatusCode::UNAUTHORIZED, "Cannot modify another user's slot").into_response())
-    }
-
-    Ok(())
-}
-
 async fn publish(
     State(state): State<AppState>,
     session: Extension<SessionData>,
@@ -113,7 +88,7 @@ async fn publish(
             let num_slots = sqlx::query!("SELECT COUNT(*) AS num_slots FROM slots WHERE author = $1", session.user_id)
                 .fetch_one(&state.pool)
                 .await
-                .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())?
+                .map_err(db_error)?
                 .num_slots
                 .unwrap_or_default();
 
@@ -166,7 +141,7 @@ async fn publish(
         )
         .fetch_one(&state.pool)
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())?
+        .map_err(db_error)?
         .id,
         Some(id) => {sqlx::query!(
             "UPDATE slots
@@ -196,7 +171,7 @@ async fn publish(
         )
         .execute(&state.pool)
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())?;
+        .map_err(db_error)?;
         id},
     };
 
@@ -220,7 +195,7 @@ async fn unpublish(
     )
         .execute(&state.pool)
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())?;
+        .map_err(db_error)?;
 
     Ok(StatusCode::OK)
 }

@@ -12,8 +12,9 @@ mod publish;
 mod resource;
 mod tags;
 mod user;
-mod slot_search;
+mod search;
 mod slot;
+mod relation;
 
 async fn with_auth_and_digest(config: &Config) -> Router<AppState> {
     let mut router = Router::new()
@@ -23,8 +24,9 @@ async fn with_auth_and_digest(config: &Config) -> Router<AppState> {
         .merge(resource::routes(config.resource_size_limit))
         .merge(comment::routes())
         .merge(slot::routes())
-        .merge(slot_search::routes())
+        .merge(search::routes())
         .merge(publish::routes())
+        .merge(relation::routes())
         .layer(from_fn(middleware::parse_session));
 
     if !config.digest_key.is_empty() && config.verify_client_digest {
