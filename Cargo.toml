@@ -12,7 +12,8 @@ axum-extra = { version = "0.9", features = ["cookie", "query"] }
 axum-serde = { version = "0.2.0", features = ["xml"] }
 tower = "0.4"
 tower-http = { version = "0.5", features = ["trace", "fs", "limit", "compression-deflate"] }
-tower-sessions = { version = "0.9", features = ["redis-store"] }
+tower-sessions = "0.10"
+tower-sessions-redis-store = "0.10"
 http = "1.0"
 http-body = "1.0"
 http-body-util = "0.1"
