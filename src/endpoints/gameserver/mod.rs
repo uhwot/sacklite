@@ -6,7 +6,6 @@ use crate::{AppState, middleware, types::Config, utils::predicate::ContentType};
 
 mod auth;
 mod comment;
-mod enter_level;
 mod message;
 mod publish;
 mod resource;
@@ -15,10 +14,10 @@ mod user;
 mod search;
 mod slot;
 mod relation;
+mod filter;
 
 async fn with_auth_and_digest(config: &Config) -> Router<AppState> {
     let mut router = Router::new()
-        .merge(enter_level::routes())
         .merge(tags::routes())
         .merge(user::routes())
         .merge(resource::routes(config.resource_size_limit))
@@ -27,6 +26,7 @@ async fn with_auth_and_digest(config: &Config) -> Router<AppState> {
         .merge(search::routes())
         .merge(publish::routes())
         .merge(relation::routes())
+        .merge(filter::routes())
         .layer(from_fn(middleware::parse_session));
 
     if !config.digest_key.is_empty() && config.verify_client_digest {

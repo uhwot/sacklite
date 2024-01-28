@@ -81,3 +81,24 @@ pub async fn is_slot_hearted(
             .unwrap()
     )
 }
+
+pub async fn is_slot_queued(
+    user_id: Uuid,
+    slot_id: i64,
+    state: &AppState,
+) -> Result<bool, Response> {
+    Ok(
+        sqlx::query!(
+            "SELECT EXISTS(
+                SELECT timestamp FROM queued_slots
+                WHERE user_id = $1 AND slot_id = $2
+            )",
+            user_id, slot_id
+        )
+            .fetch_one(&state.pool)
+            .await
+            .map_err(db_error)?
+            .exists
+            .unwrap()
+    )
+}

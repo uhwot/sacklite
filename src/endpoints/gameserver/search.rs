@@ -10,19 +10,19 @@ use crate::{extractors::Xml, types::SessionData, AppState, utils::db::{db_error,
 
 pub fn routes() -> Router<AppState> {
     Router::new()
-        .route("/slots/:route", get(slots_newest))
+        .route("/slots", get(slots_newest))
+        .route("/slots/by", get(slots_by))
         .route("/favouriteSlots/:username", get(favourite_slots))
+        .route("/slots/lolcatftw/:username", get(queued_slots))
 }
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct SlotSearchQuery {
-    u: Option<String>,
     page_start: i64,
     page_size: i64,
     // TODO: game_filter_type: Option<String>,
 }
-
 
 #[derive(sqlx::FromRow)]
 struct Slot {
@@ -50,9 +50,11 @@ struct Slot {
     total: i64,
 }
 
-enum SlotSearchOrder {
+enum SlotSearchFilter {
     Newest,
-    LastHearted,
+    UploadedBy(Uuid),
+    LastHeartedBy(Uuid),
+    LastQueuedBy(Uuid),
 }
 
 async fn slots_newest(
@@ -61,9 +63,29 @@ async fn slots_newest(
     session: Extension<SessionData>,
 ) -> Result<impl IntoResponse, Response> {
     slot_search(
-        query, state, session,
-        SlotSearchOrder::Newest,
-        None
+        state, session,
+        SlotSearchFilter::Newest,
+        query
+    ).await
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SlotsByQuery {
+    u: String,
+}
+
+async fn slots_by(
+    query: Query<SlotSearchQuery>,
+    query2: Query<SlotsByQuery>,
+    State(state): State<AppState>,
+    session: Extension<SessionData>,
+) -> Result<impl IntoResponse, Response> {
+    let uploaded_by = get_id_from_username(&query2.u, &state).await?;
+    slot_search(
+        state, session,
+        SlotSearchFilter::UploadedBy(uploaded_by),
+        query
     ).await
 }
 
@@ -75,24 +97,32 @@ async fn favourite_slots(
 ) -> Result<impl IntoResponse, Response> {
     let hearted_by = get_id_from_username(&hearted_by, &state).await?;
     slot_search(
-        query, state, session,
-        SlotSearchOrder::LastHearted,
-        Some(hearted_by)
+        state, session,
+        SlotSearchFilter::LastHeartedBy(hearted_by),
+        query
+    ).await
+}
+
+async fn queued_slots(
+    query: Query<SlotSearchQuery>,
+    State(state): State<AppState>,
+    session: Extension<SessionData>,
+    Path(queued_by): Path<String>,
+) -> Result<impl IntoResponse, Response> {
+    let queued_by = get_id_from_username(&queued_by, &state).await?;
+    slot_search(
+        state, session,
+        SlotSearchFilter::LastQueuedBy(queued_by),
+        query
     ).await
 }
 
 async fn slot_search(
-    query: Query<SlotSearchQuery>,
     state: AppState,
     session: Extension<SessionData>,
-    order: SlotSearchOrder,
-    hearted_by: Option<Uuid>,
+    filter: SlotSearchFilter,
+    query: Query<SlotSearchQuery>,
 ) -> Result<impl IntoResponse, Response> {
-    let user_id = match &query.u {
-        Some(username) => Some(get_id_from_username(username, &state).await?),
-        None => None,
-    };
-
     // well, this is horrifying ¯\_(ツ)_/¯
     let mut sql = QueryBuilder::new(
         "SELECT slots.*,
@@ -103,27 +133,40 @@ async fn slot_search(
         JOIN users ON slots.author = users.id
         LEFT JOIN favourite_slots AS hearts ON slots.id = hearts.slot_id"
     );
-    if hearted_by.is_some() {
+
+    if let SlotSearchFilter::LastHeartedBy(user_id) = filter {
         sql.push(" JOIN favourite_slots AS own_hearts ON slots.id = own_hearts.slot_id AND own_hearts.user_id = ");
-        sql.push_bind(hearted_by);
+        sql.push_bind(user_id);
     }
+    if let SlotSearchFilter::LastQueuedBy(user_id) = filter {
+        sql.push(" JOIN queued_slots AS own_queues ON slots.id = own_queues.slot_id AND own_queues.user_id = ");
+        sql.push_bind(user_id);
+    }
+
     sql.push(" WHERE gamever <= ");
     sql.push_bind(session.game_version as i16);
     sql.push(" AND (is_sub_level = FALSE OR author = ");
     sql.push_bind(session.user_id);
     sql.push(')');
-    if let Some(user_id) = user_id {
+    if let SlotSearchFilter::UploadedBy(user_id) = filter {
         sql.push(" AND author = ");
         sql.push_bind(user_id);
     }
     sql.push(" GROUP BY slots.id, author_name");
-    if hearted_by.is_some() {
+
+    if let SlotSearchFilter::LastHeartedBy(_) = filter {
         sql.push(", own_hearts.timestamp");
     }
+    if let SlotSearchFilter::LastQueuedBy(_) = filter {
+        sql.push(", own_queues.timestamp");
+    }
+
     sql.push(" ORDER BY ");
-    sql.push(match order {
-        SlotSearchOrder::Newest => "published_at DESC",
-        SlotSearchOrder::LastHearted => "own_hearts.timestamp DESC",
+    sql.push(match filter {
+        SlotSearchFilter::Newest => "published_at DESC",
+        SlotSearchFilter::UploadedBy(_) => "published_at DESC",
+        SlotSearchFilter::LastHeartedBy(_) => "own_hearts.timestamp DESC",
+        SlotSearchFilter::LastQueuedBy(_) => "own_queues.timestamp DESC",
     });
     sql.push(" LIMIT ");
     sql.push_bind(query.page_size);
@@ -185,9 +228,9 @@ async fn slot_search(
 
     // /slots and /favouriteSlots endpoints return different root element names
     Ok(Xml(xml!(
-        @match hearted_by {
-            None => { slots total=(total) hint_start=(hint_start) {(xml_list)} },
-            Some(_) => { favouriteSlots total=(total) hint_start=(hint_start) {(xml_list)} },
+        @match filter {
+            SlotSearchFilter::LastHeartedBy(_) => { favouriteSlots total=(total) hint_start=(hint_start) {(xml_list)} },
+            _ => { slots total=(total) hint_start=(hint_start) {(xml_list)} },
         }
     )))
 }
