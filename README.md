@@ -7,5 +7,5 @@ NOTE: this is extremely WIP and security isn't entirely there yet, please don't 
 - NpTicket authentication, including signature + expiry verification
 - resource uploading/downloading (but still no filetype checks)
 - user stuff (bio, pins, icon, comments)
-- level publishing/updating + comments
+- level stuff (publishing, updating, comments, hearts, queue)
 - autodiscover API from Refresh/Bunkum
